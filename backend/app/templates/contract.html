@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: Arial, sans-serif; font-size: 11pt; margin: 2cm; color: #000; }
+  h1 { font-size: 14pt; text-align: center; margin-bottom: 0.5em; }
+  h2 { font-size: 12pt; margin-top: 1.5em; }
+  .parties { margin: 1em 0; }
+  .field { border-bottom: 1px solid #000; display: inline-block; min-width: 200px; }
+  table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+  td, th { border: 1px solid #000; padding: 4px 8px; }
+  th { background: #f0f0f0; }
+  .signatures { margin-top: 3em; display: flex; justify-content: space-between; }
+  .sig-block { width: 45%; }
+  .sig-line { border-top: 1px solid #000; margin-top: 3em; padding-top: 4px; font-size: 10pt; }
+  @media print {
+    body { margin: 2cm; }
+    .no-print { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<h1>ДОГОВОР № _____<br>об оказании образовательных услуг</h1>
+<p style="text-align:center;">г. __________ &nbsp;&nbsp;&nbsp; «{{ date }}»</p>
+
+<div class="parties">
+<p>
+  <strong>Исполнитель:</strong> Школа программирования KiberOne, именуемая в дальнейшем «Исполнитель», в лице директора,
+  действующего на основании Устава, с одной стороны, и
+</p>
+<p>
+  <strong>Заказчик:</strong> <span class="field">{{ parent_name }}</span>,
+  именуемый в дальнейшем «Заказчик», с другой стороны,
+  совместно именуемые «Стороны», заключили настоящий Договор о нижеследующем:
+</p>
+</div>
+
+<h2>1. ПРЕДМЕТ ДОГОВОРА</h2>
+<p>
+  1.1. Исполнитель обязуется оказать образовательные услуги по программированию для:
+</p>
+<table>
+  <tr><th>Параметр</th><th>Значение</th></tr>
+  <tr><td>ФИО ребёнка</td><td>{{ child_name }}</td></tr>
+  <tr><td>Дата рождения</td><td>{{ child_birth_date }}</td></tr>
+  <tr><td>Расписание занятий</td><td>{{ lesson_schedule }}</td></tr>
+</table>
+
+<h2>2. СТОИМОСТЬ И ПОРЯДОК ОПЛАТЫ</h2>
+<p>
+  2.1. Стоимость услуг составляет <strong>{{ amount }} рублей</strong> в месяц.
+</p>
+<p>
+  2.2. Оплата производится ежемесячно до 5-го числа текущего месяца наличными или по QR-коду.
+</p>
+
+<h2>3. ПРАВА И ОБЯЗАННОСТИ СТОРОН</h2>
+<p>3.1. Исполнитель обязуется:</p>
+<ul>
+  <li>Проводить занятия согласно расписанию;</li>
+  <li>Обеспечивать качественное обучение;</li>
+  <li>Уведомлять об изменениях в расписании заблаговременно.</li>
+</ul>
+<p>3.2. Заказчик обязуется:</p>
+<ul>
+  <li>Своевременно вносить оплату;</li>
+  <li>Обеспечивать посещение занятий ребёнком;</li>
+  <li>Уведомлять об отсутствии заранее.</li>
+</ul>
+
+<h2>4. СРОК ДЕЙСТВИЯ ДОГОВОРА</h2>
+<p>
+  4.1. Настоящий Договор вступает в силу с момента подписания и действует в течение одного учебного года.
+</p>
+
+<h2>5. ПРОЧИЕ УСЛОВИЯ</h2>
+<p>
+  5.1. Все спорные вопросы решаются путём переговоров.
+  5.2. Договор составлен в двух экземплярах, имеющих равную юридическую силу.
+</p>
+
+<div class="signatures">
+  <div class="sig-block">
+    <strong>Исполнитель:</strong>
+    <div class="sig-line">Подпись / Дата</div>
+    <p>KiberOne</p>
+  </div>
+  <div class="sig-block">
+    <strong>Заказчик:</strong>
+    <div class="sig-line">Подпись / Дата</div>
+    <p>{{ parent_name }}</p>
+  </div>
+</div>
+
+</body>
+</html>
