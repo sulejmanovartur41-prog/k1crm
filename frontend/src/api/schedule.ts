@@ -2,7 +2,8 @@ import api from './client'
 
 export interface Lesson {
   id: number
-  group_name: string
+  group_id: number
+  group_name?: string | null  // подтягивается с бэка через join — может быть null если фронт-клиент создаёт объект сам
   teacher_id: number
   datetime: string
   room: string | null

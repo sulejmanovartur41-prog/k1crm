@@ -1,8 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Table, Button, Modal, Form, Input, InputNumber, DatePicker, Typography, message, Space } from 'antd'
+import { Table, Button, Modal, Form, Input, InputNumber, DatePicker, Select, Typography, message, Space } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { useState } from 'react'
 import api from '../../api/client'
+import { listGroups } from '../../api/groups'
 import dayjs from 'dayjs'
 
 const { Title } = Typography
@@ -15,6 +16,11 @@ export default function SchedulePage() {
   const { data: lessons = [], isLoading } = useQuery({
     queryKey: ['lessons'],
     queryFn: () => api.get('/schedule/lessons').then((r) => r.data),
+  })
+
+  const { data: groups = [] } = useQuery({
+    queryKey: ['groups', 'active'],
+    queryFn: () => listGroups('active'),
   })
 
   const createMutation = useMutation({
@@ -47,7 +53,14 @@ export default function SchedulePage() {
       <Table rowKey="id" columns={columns} dataSource={lessons} loading={isLoading} size="middle" />
       <Modal title="Новое занятие" open={open} onCancel={() => setOpen(false)} onOk={() => form.submit()} okText="Создать">
         <Form form={form} layout="vertical" onFinish={(v) => createMutation.mutate(v)}>
-          <Form.Item name="group_name" label="Группа" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="group_id" label="Группа" rules={[{ required: true }]}>
+            <Select
+              options={groups.map(g => ({ value: g.id, label: g.name }))}
+              placeholder="Выберите группу"
+              showSearch
+              optionFilterProp="label"
+            />
+          </Form.Item>
           <Form.Item name="teacher_id" label="ID преподавателя" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} /></Form.Item>
           <Form.Item name="datetime" label="Дата и время" rules={[{ required: true }]}><DatePicker showTime style={{ width: '100%' }} /></Form.Item>
           <Form.Item name="room" label="Аудитория"><Input /></Form.Item>

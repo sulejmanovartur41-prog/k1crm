@@ -11,6 +11,7 @@ const PRIMARY = '#1677ff'
 const MENU = [
   { key: '/manager',           label: 'Воронка' },
   { key: '/manager/leads',     label: 'Лиды' },
+  { key: '/manager/groups',    label: 'Группы' },
   { key: '/manager/schedule',  label: 'Расписание' },
   { key: '/manager/contracts', label: 'Договора' },
 ]

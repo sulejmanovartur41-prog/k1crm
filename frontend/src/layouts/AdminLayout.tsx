@@ -6,6 +6,7 @@ import {
   FileTextOutlined,
   CheckSquareOutlined,
   SafetyCertificateOutlined,
+  TeamOutlined,
 } from '@ant-design/icons'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import UserMenu from './UserMenu'
@@ -18,6 +19,7 @@ const PRIMARY = '#722ed1'
 const MENU = [
   { key: '/admin',            icon: <DashboardOutlined />,        label: 'Дашборд' },
   { key: '/admin/leads',      icon: <UserOutlined />,             label: 'Лиды' },
+  { key: '/admin/groups',     icon: <TeamOutlined />,             label: 'Группы' },
   { key: '/admin/schedule',   icon: <CalendarOutlined />,         label: 'Расписание' },
   { key: '/admin/contracts',  icon: <FileTextOutlined />,         label: 'Договора' },
   { key: '/admin/attendance', icon: <CheckSquareOutlined />,      label: 'Посещаемость' },

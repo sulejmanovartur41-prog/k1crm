@@ -11,6 +11,7 @@ const PRIMARY = '#52c41a'
 const TABS = [
   { value: '/teacher',            label: 'Сегодня' },
   { value: '/teacher/schedule',   label: 'Расписание' },
+  { value: '/teacher/groups',     label: 'Группы' },
   { value: '/teacher/attendance', label: 'Журнал' },
 ]
 
