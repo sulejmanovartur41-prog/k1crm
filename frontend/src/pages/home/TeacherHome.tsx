@@ -1,7 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Row, Col, Card, Typography, Empty, Button, Statistic, Space, Tag } from 'antd'
-import { CheckSquareOutlined, ClockCircleOutlined, TeamOutlined } from '@ant-design/icons'
+import { Table, Tag, Button, Typography, Space, Badge } from 'antd'
+import { CheckSquareOutlined, ArrowRightOutlined } from '@ant-design/icons'
+import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
 import { getLessons, Lesson } from '../../api/schedule'
 
@@ -10,91 +11,131 @@ const { Title, Text } = Typography
 export default function TeacherHome() {
   const navigate = useNavigate()
 
-  const { data: lessons = [] } = useQuery({ queryKey: ['lessons'], queryFn: getLessons })
+  const { data: lessons = [], isLoading } = useQuery({
+    queryKey: ['lessons'],
+    queryFn: getLessons,
+  })
 
-  const today = dayjs().startOf('day')
-  const tomorrow = today.add(1, 'day')
-  const todayLessons: Lesson[] = lessons
-    .filter(l => dayjs(l.datetime).isAfter(today) && dayjs(l.datetime).isBefore(tomorrow))
+  const now = dayjs()
+  const upcoming = lessons
+    .filter(l => dayjs(l.datetime).isAfter(now.subtract(2, 'hour')))
     .sort((a, b) => dayjs(a.datetime).valueOf() - dayjs(b.datetime).valueOf())
 
-  const nextLesson = todayLessons.find(l => dayjs(l.datetime).isAfter(dayjs()))
+  const columns: ColumnsType<Lesson> = [
+    {
+      title: 'Дата',
+      dataIndex: 'datetime',
+      width: 100,
+      render: (d: string) => {
+        const dt = dayjs(d)
+        const isToday = dt.isSame(now, 'day')
+        return (
+          <Space direction="vertical" size={0}>
+            <Text strong={isToday} style={{ color: isToday ? '#52c41a' : undefined }}>
+              {dt.format('DD MMM')}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{dt.format('ddd')}</Text>
+          </Space>
+        )
+      },
+    },
+    {
+      title: 'Время',
+      dataIndex: 'datetime',
+      width: 80,
+      render: (d: string) => {
+        const dt = dayjs(d)
+        const isNow = dt.isAfter(now.subtract(2, 'hour')) && dt.isBefore(now.add(2, 'hour'))
+        return (
+          <Text strong style={{ fontSize: 16, color: isNow ? '#52c41a' : undefined }}>
+            {dt.format('HH:mm')}
+          </Text>
+        )
+      },
+    },
+    {
+      title: 'Группа',
+      dataIndex: 'group_name',
+      render: (name: string, record) => (
+        <Button
+          type="link"
+          style={{ padding: 0, fontWeight: 600 }}
+          onClick={() => navigate(`/teacher/groups/${record.group_id}`)}
+        >
+          {name ?? `Группа #${record.group_id}`}
+        </Button>
+      ),
+    },
+    {
+      title: 'Аудитория',
+      dataIndex: 'room',
+      width: 110,
+      render: (r: string | null) => r ? <Tag>{r}</Tag> : <Text type="secondary">—</Text>,
+    },
+    {
+      title: 'Мест',
+      dataIndex: 'capacity',
+      width: 70,
+      align: 'center',
+    },
+    {
+      title: '',
+      key: 'action',
+      width: 130,
+      render: (_: unknown, record) => {
+        const dt = dayjs(record.datetime)
+        const isActive = dt.isAfter(now.subtract(3, 'hour')) && dt.isBefore(now.add(1, 'hour'))
+        return (
+          <Space>
+            <Button
+              size="small"
+              type={isActive ? 'primary' : 'default'}
+              icon={<CheckSquareOutlined />}
+              onClick={() => navigate(`/teacher/attendance?lesson=${record.id}`)}
+            >
+              Перекличка
+            </Button>
+          </Space>
+        )
+      },
+    },
+  ]
+
+  // Group lessons by date for display
+  const todayCount = upcoming.filter(l => dayjs(l.datetime).isSame(now, 'day')).length
 
   return (
     <div>
-      <Title level={3} style={{ marginBottom: 4 }}>Сегодня</Title>
-      <Text type="secondary" style={{ textTransform: 'capitalize' }}>
-        {dayjs().format('dddd, D MMMM YYYY')}
-      </Text>
+      <Space style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div>
+          <Title level={3} style={{ margin: 0 }}>Моё расписание</Title>
+          <Text type="secondary" style={{ textTransform: 'capitalize' }}>
+            {now.format('dddd, D MMMM YYYY')}
+            {todayCount > 0 && (
+              <> · <Badge count={todayCount} color="#52c41a" /> сегодня</>
+            )}
+          </Text>
+        </div>
+        <Button
+          icon={<ArrowRightOutlined />}
+          onClick={() => navigate('/teacher/groups')}
+        >
+          Мои группы
+        </Button>
+      </Space>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
-        <Col xs={24} sm={12}>
-          <Card>
-            <Statistic
-              title="Уроков сегодня"
-              value={todayLessons.length}
-              prefix={<ClockCircleOutlined style={{ color: '#52c41a' }} />}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12}>
-          <Card>
-            <Statistic
-              title="Следующий урок"
-              value={nextLesson ? dayjs(nextLesson.datetime).format('HH:mm') : '—'}
-              suffix={nextLesson ? `· ${nextLesson.group_name}` : undefined}
-              prefix={<TeamOutlined style={{ color: '#52c41a' }} />}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      <Card title="Уроки на сегодня" style={{ marginTop: 16 }}>
-        {todayLessons.length === 0 ? (
-          <Empty description="На сегодня уроков нет" />
-        ) : (
-          <Space direction="vertical" style={{ width: '100%' }} size="middle">
-            {todayLessons.map(l => {
-              const start = dayjs(l.datetime)
-              const isPast = start.isBefore(dayjs())
-              return (
-                <Card
-                  key={l.id}
-                  size="small"
-                  style={{ background: isPast ? '#fafafa' : '#fff', borderColor: isPast ? '#f0f0f0' : '#b7eb8f' }}
-                >
-                  <Row align="middle" gutter={16}>
-                    <Col flex="80px">
-                      <Title level={3} style={{ margin: 0, color: isPast ? '#999' : '#52c41a' }}>
-                        {start.format('HH:mm')}
-                      </Title>
-                    </Col>
-                    <Col flex="auto">
-                      <Space direction="vertical" size={2}>
-                        <Text strong style={{ fontSize: 16 }}>{l.group_name}</Text>
-                        <Space size="small">
-                          {l.room && <Tag>Ауд. {l.room}</Tag>}
-                          <Tag color="default">мест {l.capacity}</Tag>
-                          {isPast && <Tag color="default">завершён</Tag>}
-                        </Space>
-                      </Space>
-                    </Col>
-                    <Col>
-                      <Button
-                        type="primary"
-                        icon={<CheckSquareOutlined />}
-                        onClick={() => navigate(`/teacher/attendance?lesson=${l.id}`)}
-                      >
-                        Перекличка
-                      </Button>
-                    </Col>
-                  </Row>
-                </Card>
-              )
-            })}
-          </Space>
-        )}
-      </Card>
+      <Table
+        rowKey="id"
+        columns={columns}
+        dataSource={upcoming}
+        loading={isLoading}
+        size="middle"
+        pagination={false}
+        rowClassName={(record) =>
+          dayjs(record.datetime).isSame(now, 'day') ? 'ant-table-row-selected' : ''
+        }
+        locale={{ emptyText: 'Предстоящих занятий нет' }}
+      />
     </div>
   )
 }

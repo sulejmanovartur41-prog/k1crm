@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
+  Badge,
   Button,
   Card,
   Col,
@@ -9,10 +10,13 @@ import {
   Form,
   Input,
   InputNumber,
+  List,
   Modal,
+  Popover,
   Progress,
   Row,
   Segmented,
+  Skeleton,
   Space,
   Tag,
   Typography,
@@ -23,6 +27,7 @@ import {
   GroupListItem,
   GroupStatus,
   createGroup,
+  getGroup,
   listGroups,
 } from '../../api/groups'
 import { getRole } from '../../auth'
@@ -138,56 +143,99 @@ export default function GroupsPage() {
   )
 }
 
+const STATUS_COLOR: Record<string, string> = {
+  active: 'green',
+  inactive: 'default',
+  frozen: 'blue',
+}
+
+function StudentPopoverContent({ groupId }: { groupId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['group', groupId],
+    queryFn: () => getGroup(groupId),
+    staleTime: 60_000,
+  })
+
+  if (isLoading) return <Skeleton active paragraph={{ rows: 3 }} style={{ width: 220 }} />
+  if (!data || data.students.length === 0) return <Text type="secondary">Учеников нет</Text>
+
+  return (
+    <List
+      size="small"
+      style={{ width: 240, maxHeight: 300, overflowY: 'auto' }}
+      dataSource={data.students}
+      renderItem={(s) => (
+        <List.Item style={{ padding: '4px 0' }}>
+          <Space>
+            <Badge color={STATUS_COLOR[s.status] ?? 'default'} />
+            <Text style={{ fontSize: 13 }}>{s.child_name}</Text>
+          </Space>
+        </List.Item>
+      )}
+    />
+  )
+}
+
 function GroupCard({ group, base }: { group: GroupListItem; base: string }) {
+  const [popoverOpen, setPopoverOpen] = useState(false)
   const fill = group.capacity > 0 ? Math.round((group.students_count / group.capacity) * 100) : 0
   const fillStatus = fill >= 100 ? 'exception' : fill >= 80 ? 'normal' : 'active'
 
   return (
-    <Card
-      hoverable
-      styles={{ body: { padding: 16 } }}
-      title={
-        <Space align="center">
-          <span
-            style={{
-              display: 'inline-block',
-              width: 12,
-              height: 12,
-              borderRadius: '50%',
-              background: group.color || '#bfbfbf',
-            }}
-          />
-          <span>{group.name}</span>
-        </Space>
-      }
-      extra={group.status === 'archived' ? <Tag>Архив</Tag> : null}
+    <Popover
+      content={<StudentPopoverContent groupId={group.id} />}
+      title={<Text strong>Ученики ({group.students_count})</Text>}
+      trigger="hover"
+      open={popoverOpen}
+      onOpenChange={setPopoverOpen}
+      placement="right"
     >
-      <Space direction="vertical" size={6} style={{ width: '100%' }}>
-        {group.level && <Tag color={group.color || 'blue'}>{group.level}</Tag>}
-        <Text type="secondary">
-          <UserOutlined /> {group.teacher_name ?? 'Вакансия'}
-        </Text>
-        {group.room && (
+      <Card
+        hoverable
+        styles={{ body: { padding: 16 } }}
+        title={
+          <Space align="center">
+            <span
+              style={{
+                display: 'inline-block',
+                width: 12,
+                height: 12,
+                borderRadius: '50%',
+                background: group.color || '#bfbfbf',
+              }}
+            />
+            <span>{group.name}</span>
+          </Space>
+        }
+        extra={group.status === 'archived' ? <Tag>Архив</Tag> : null}
+      >
+        <Space direction="vertical" size={6} style={{ width: '100%' }}>
+          {group.level && <Tag color={group.color || 'blue'}>{group.level}</Tag>}
           <Text type="secondary">
-            <EnvironmentOutlined /> {group.room}
+            <UserOutlined /> {group.teacher_name ?? 'Вакансия'}
           </Text>
-        )}
-        <div>
-          <Text type="secondary">
-            <TeamOutlined /> {group.students_count} / {group.capacity}
-          </Text>
-          <Progress
-            percent={fill}
-            status={fillStatus}
-            showInfo={false}
-            size="small"
-            style={{ marginTop: 4 }}
-          />
-        </div>
-        <Link to={`${base}/groups/${group.id}`}>
-          <Button type="link" style={{ padding: 0 }}>Открыть карточку →</Button>
-        </Link>
-      </Space>
-    </Card>
+          {group.room && (
+            <Text type="secondary">
+              <EnvironmentOutlined /> {group.room}
+            </Text>
+          )}
+          <div>
+            <Text type="secondary">
+              <TeamOutlined /> {group.students_count} / {group.capacity}
+            </Text>
+            <Progress
+              percent={fill}
+              status={fillStatus}
+              showInfo={false}
+              size="small"
+              style={{ marginTop: 4 }}
+            />
+          </div>
+          <Link to={`${base}/groups/${group.id}`}>
+            <Button type="link" style={{ padding: 0 }}>Открыть карточку →</Button>
+          </Link>
+        </Space>
+      </Card>
+    </Popover>
   )
 }
