@@ -12,6 +12,7 @@ from app.api.v1.auth import get_current_user, require_role
 from app.database import get_db
 from app.models.attendance import Attendance
 from app.models.client import Client
+from app.models.group import Group
 from app.models.lead import Lead
 from app.models.lesson import Lesson
 from app.models.payment import Payment
@@ -154,13 +155,14 @@ async def dashboard(
     thirty_days_ago = now - timedelta(days=30)
     att_raw = await db.execute(
         select(
-            Lesson.group_name,
+            Group.name.label("group_name"),
             func.count(Attendance.id).label("total"),
             func.sum(func.cast(Attendance.present, Integer)).label("present"),
         )
-        .join(Attendance, Attendance.lesson_id == Lesson.id)
+        .join(Lesson, Lesson.id == Attendance.lesson_id)
+        .join(Group, Group.id == Lesson.group_id)
         .where(Lesson.datetime >= thirty_days_ago)
-        .group_by(Lesson.group_name)
+        .group_by(Group.name)
     )
     attendance_data = [
         {
