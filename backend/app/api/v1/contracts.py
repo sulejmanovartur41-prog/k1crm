@@ -2,11 +2,11 @@ import logging
 import os
 from calendar import monthrange
 from datetime import datetime, timedelta, timezone, date
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,11 +30,11 @@ router = APIRouter(prefix="/contracts", tags=["contracts"])
 
 class IntakeData(BaseModel):
     intake_token: str
-    child_name: str
+    child_name: Annotated[str, StringConstraints(max_length=100)]
     child_birth_date: date
-    parent_name: str
-    parent_phone: str
-    passport_data: str
+    parent_name: Annotated[str, StringConstraints(max_length=100)]
+    parent_phone: Annotated[str, StringConstraints(max_length=20)]
+    passport_data: Annotated[str, StringConstraints(max_length=200)]
     # amount намеренно не принимается от клиента — иначе можно подписать
     # договор на 0.01 ₽. Берём из настроек/тарифа.
 

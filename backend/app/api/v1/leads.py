@@ -13,7 +13,7 @@ from app.models.lead import Lead
 from app.models.call_task import CallTask
 from app.models.user import User
 
-LeadStatus = Literal["new", "calling", "in_doubt", "enrolled", "refused", "archived"]
+LeadStatus = Literal["new", "calling", "called", "in_doubt", "enrolled", "refused", "archived"]
 
 logger = logging.getLogger(__name__)
 

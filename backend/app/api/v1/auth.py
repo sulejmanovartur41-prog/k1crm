@@ -25,10 +25,15 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 8
 
+# Constant-time dummy hash: prevents timing oracle when username is not found
+# (bcrypt.verify runs the full hash round even for non-existent users).
+_DUMMY_HASH = pwd_context.hash("__dummy__")
+
 # Простой rate-limit логина: окно 5 минут, in-memory.
 # Для prod с несколькими репликами лучше Redis-based limiter, но для дипломной
 # работы и одного инстанса это адекватная защита от брутфорса.
 _LOGIN_WINDOW = timedelta(minutes=5)
+_MAX_TRACKED_IPS = 10_000  # bound memory: evict oldest key when limit reached
 _login_attempts: dict[str, Deque[datetime]] = defaultdict(deque)
 
 
@@ -112,6 +117,10 @@ def _check_login_rate_limit(client_ip: str) -> None:
     """Бросает 429, если с одного IP было больше N попыток за окно."""
     now = datetime.now(timezone.utc)
     cutoff = now - _LOGIN_WINDOW
+    # Evict oldest key to bound memory when too many unique IPs accumulate.
+    if len(_login_attempts) >= _MAX_TRACKED_IPS and client_ip not in _login_attempts:
+        oldest = next(iter(_login_attempts))
+        del _login_attempts[oldest]
     attempts = _login_attempts[client_ip]
     while attempts and attempts[0] < cutoff:
         attempts.popleft()
@@ -136,7 +145,9 @@ async def login(
 
     result = await db.execute(select(User).where(User.login == form_data.username))
     user = result.scalar_one_or_none()
-    if not user or not verify_password(form_data.password, user.password_hash):
+    # Always run bcrypt to prevent timing oracle (user existence leaks).
+    password_ok = verify_password(form_data.password, user.password_hash if user else _DUMMY_HASH)
+    if not user or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный логин или пароль",

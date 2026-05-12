@@ -13,7 +13,7 @@ class Lead(Base):
     phone: Mapped[str] = mapped_column(String(20), index=True)
     source: Mapped[str] = mapped_column(String(20))  # telegram, whatsapp, site, phone
     status: Mapped[str] = mapped_column(String(20), default="new", index=True)
-    # new, calling, in_doubt, enrolled, refused, archived
+    # new, calling, called, in_doubt, enrolled, refused, archived
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     next_call_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
