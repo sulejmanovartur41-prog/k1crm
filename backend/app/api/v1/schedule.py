@@ -1,7 +1,7 @@
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -13,6 +13,8 @@ from app.database import get_db
 from app.models.lesson import Lesson
 from app.models.trial_booking import TrialBooking
 from app.models.user import User
+
+BookingStatus = Literal["booked", "cancelled", "attended", "no_show", "intake_done"]
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +60,14 @@ class BookingOut(BaseModel):
 @router.get("/lessons", response_model=List[LessonOut], summary="Список занятий")
 async def list_lessons(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Lesson).order_by(Lesson.datetime))
+    q = select(Lesson).order_by(Lesson.datetime)
+    # Учитель видит только свои занятия — иначе через мобильное приложение
+    # один преподаватель увидит и сможет открыть перекличку чужой группы.
+    if current_user.role == "teacher":
+        q = q.where(Lesson.teacher_id == current_user.id)
+    result = await db.execute(q)
     return result.scalars().all()
 
 
@@ -70,6 +77,14 @@ async def create_lesson(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role("admin", "manager")),
 ):
+    # Проверяем, что teacher_id действительно ссылается на пользователя с ролью teacher
+    teacher_res = await db.execute(select(User).where(User.id == data.teacher_id))
+    teacher = teacher_res.scalar_one_or_none()
+    if not teacher:
+        raise HTTPException(422, "Преподаватель не найден")
+    if teacher.role != "teacher":
+        raise HTTPException(422, "Указанный пользователь не имеет роли преподавателя")
+
     lesson = Lesson(**data.model_dump())
     db.add(lesson)
     await db.commit()
@@ -106,9 +121,12 @@ async def get_slots(
 async def create_booking(
     data: BookingCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin", "manager")),
 ):
-    result = await db.execute(select(Lesson).where(Lesson.id == data.lesson_id))
+    # Блокируем строку урока, чтобы конкурентные записи не пробили capacity
+    result = await db.execute(
+        select(Lesson).where(Lesson.id == data.lesson_id).with_for_update()
+    )
     lesson = result.scalar_one_or_none()
     if not lesson:
         raise HTTPException(404, "Занятие не найдено")
@@ -121,6 +139,16 @@ async def create_booking(
     )
     if booked.scalar() >= lesson.capacity:
         raise HTTPException(409, "Нет свободных мест на занятии")
+
+    # Один лид не может быть записан дважды на один урок
+    existing = await db.execute(
+        select(TrialBooking).where(
+            TrialBooking.lesson_id == data.lesson_id,
+            TrialBooking.lead_id == data.lead_id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(409, "Лид уже записан на это занятие")
 
     token = secrets.token_urlsafe(32)
     booking = TrialBooking(lead_id=data.lead_id, lesson_id=data.lesson_id, intake_token=token)
@@ -150,9 +178,9 @@ async def create_booking(
 @router.patch("/bookings/{booking_id}", summary="Изменить/отменить запись")
 async def update_booking(
     booking_id: int,
-    status: str,
+    status: BookingStatus,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin", "manager")),
 ):
     result = await db.execute(select(TrialBooking).where(TrialBooking.id == booking_id))
     booking = result.scalar_one_or_none()

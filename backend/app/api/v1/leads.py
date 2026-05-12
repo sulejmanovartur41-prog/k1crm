@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -12,6 +12,8 @@ from app.database import get_db
 from app.models.lead import Lead
 from app.models.call_task import CallTask
 from app.models.user import User
+
+LeadStatus = Literal["new", "calling", "in_doubt", "enrolled", "refused", "archived"]
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ class LeadCreate(BaseModel):
 
 
 class LeadStatusUpdate(BaseModel):
-    status: str
+    status: LeadStatus
     refusal_reason: Optional[str] = None
 
 
@@ -72,9 +74,13 @@ async def leads_stats(
     )
     stats = {row[0]: row[1] for row in result.all()}
     today = datetime.now(timezone.utc).date()
+    # Range-фильтр вместо func.date() — использует индекс по created_at.
+    today_start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
+    tomorrow_start = today_start + timedelta(days=1)
     new_today = await db.execute(
         select(func.count(Lead.id)).where(
-            func.date(Lead.created_at) == today
+            Lead.created_at >= today_start,
+            Lead.created_at < tomorrow_start,
         )
     )
     return {"by_status": stats, "new_today": new_today.scalar()}
@@ -97,7 +103,7 @@ async def get_lead(
 async def create_lead(
     data: LeadCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin", "manager")),
 ):
     lead = Lead(
         name=data.name,
@@ -127,7 +133,7 @@ async def update_lead_status(
     lead_id: int,
     data: LeadStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin", "manager")),
 ):
     result = await db.execute(select(Lead).where(Lead.id == lead_id))
     lead = result.scalar_one_or_none()

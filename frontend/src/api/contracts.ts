@@ -18,6 +18,7 @@ export const getContract = (id: number) =>
 export const signContract = (id: number) =>
   api.post(`/contracts/${id}/sign`).then((r) => r.data)
 
+// amount намеренно не передаётся: сервер берёт сумму из настроек.
 export const submitIntake = (data: {
   intake_token: string
   child_name: string
@@ -25,5 +26,4 @@ export const submitIntake = (data: {
   parent_name: string
   parent_phone: string
   passport_data: string
-  amount?: number
 }) => api.post('/contracts/intake', data).then((r) => r.data)

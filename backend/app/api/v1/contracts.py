@@ -1,7 +1,7 @@
 import logging
 import os
 from calendar import monthrange
-from datetime import datetime, timezone, date
+from datetime import datetime, timedelta, timezone, date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.auth import get_current_user
+from app.api.v1.auth import get_current_user, require_role
 from app.config import settings
 from app.database import get_db
 from app.models.client import Client
@@ -19,6 +19,8 @@ from app.models.payment import Payment
 from app.models.trial_booking import TrialBooking
 from app.models.user import User
 from app.services.pdf import generate_contract_pdf
+
+INTAKE_TOKEN_TTL = timedelta(days=7)
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,8 @@ class IntakeData(BaseModel):
     parent_name: str
     parent_phone: str
     passport_data: str
-    amount: float = 5000.0
+    # amount намеренно не принимается от клиента — иначе можно подписать
+    # договор на 0.01 ₽. Берём из настроек/тарифа.
 
 
 class ContractOut(BaseModel):
@@ -52,12 +55,28 @@ async def intake(
     data: IntakeData,
     db: AsyncSession = Depends(get_db),
 ):
+    # Блокируем строку брони — один токен можно «погасить» только один раз,
+    # даже при параллельных POST-запросах.
     result = await db.execute(
-        select(TrialBooking).where(TrialBooking.intake_token == data.intake_token)
+        select(TrialBooking)
+        .where(TrialBooking.intake_token == data.intake_token)
+        .with_for_update()
     )
     booking = result.scalar_one_or_none()
     if not booking:
         raise HTTPException(404, "Анкета не найдена или ссылка устарела")
+
+    # Один токен — одна анкета (защита от переиспользования)
+    if booking.status == "intake_done":
+        raise HTTPException(410, "Эта ссылка уже была использована")
+
+    # Срок жизни токена — 7 дней с момента создания брони
+    if booking.created_at:
+        created = booking.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - created > INTAKE_TOKEN_TTL:
+            raise HTTPException(410, "Срок действия ссылки истёк")
 
     client = Client(
         lead_id=booking.lead_id,
@@ -69,18 +88,26 @@ async def intake(
     )
     db.add(client)
     await db.flush()
+    booking.status = "intake_done"
 
-    contract = Contract(client_id=client.id, amount=data.amount)
+    contract = Contract(client_id=client.id, amount=settings.default_contract_amount)
     db.add(contract)
-    await db.flush()
+    # Коммитим, не дожидаясь PDF: блокировка на trial_booking снимается, повторный
+    # POST увидит status=intake_done и вернёт 410 раньше, чем мы успеем сгенерить
+    # тяжёлый PDF.
+    await db.commit()
+    await db.refresh(contract)
 
     try:
         pdf_path = await generate_contract_pdf(client, contract)
         contract.pdf_path = pdf_path
+        await db.commit()
     except Exception as e:
-        logger.error("PDF generation failed: %s", e)
+        logger.error("PDF generation failed for contract %s: %s", contract.id, e)
+        # Договор уже создан, но PDF не сгенерирован — менеджер увидит запись
+        # с pdf_path=NULL и сможет пере-сгенерировать вручную.
+        raise HTTPException(500, "Не удалось сформировать PDF договора")
 
-    await db.commit()
     logger.info("Contract created for client %s", client.id)
     return {
         "message": "Спасибо! Ваш договор готов, менеджер распечатает его к вашему приходу.",
@@ -91,7 +118,7 @@ async def intake(
 @router.get("", response_model=List[ContractOut], summary="Список договоров")
 async def list_contracts(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin", "manager")),
 ):
     result = await db.execute(select(Contract).order_by(Contract.created_at.desc()))
     return result.scalars().all()
@@ -101,7 +128,7 @@ async def list_contracts(
 async def get_contract(
     contract_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin", "manager")),
 ):
     result = await db.execute(select(Contract).where(Contract.id == contract_id))
     c = result.scalar_one_or_none()
@@ -114,7 +141,7 @@ async def get_contract(
 async def download_contract(
     contract_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin", "manager")),
 ):
     result = await db.execute(select(Contract).where(Contract.id == contract_id))
     c = result.scalar_one_or_none()
@@ -129,9 +156,13 @@ async def download_contract(
 async def sign_contract(
     contract_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin", "manager")),
 ):
-    result = await db.execute(select(Contract).where(Contract.id == contract_id))
+    # Блокируем договор — без этого два одновременных /sign создадут
+    # два Payment-а на первый месяц.
+    result = await db.execute(
+        select(Contract).where(Contract.id == contract_id).with_for_update()
+    )
     c = result.scalar_one_or_none()
     if not c:
         raise HTTPException(404, "Договор не найден")

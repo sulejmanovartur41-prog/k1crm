@@ -1,4 +1,6 @@
 import logging
+from typing import Optional
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
@@ -7,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _send_telegram(chat_id: str, message: str) -> bool:
-    """Send Telegram message. Returns False if not configured."""
+    """Отправить сообщение в Telegram. Возвращает False, если бот не сконфигурирован."""
     from app.config import settings
     if not settings.telegram_bot_token or not chat_id:
         logger.info("Telegram not configured, skipping: %s", message[:80])
@@ -23,7 +25,13 @@ async def _send_telegram(chat_id: str, message: str) -> bool:
         return False
 
 
-async def notify_manager(db: AsyncSession, message: str, recipient_id: int, chat_id: str = "") -> None:
+async def notify_manager(
+    db: AsyncSession,
+    message: str,
+    recipient_id: Optional[int] = None,
+    chat_id: str = "",
+) -> None:
+    """Уведомление менеджера. recipient_id=None означает «общий чат менеджеров»."""
     from app.config import settings
     target_chat = chat_id or settings.manager_telegram_chat_id
     await _send_telegram(target_chat, message)
@@ -36,7 +44,12 @@ async def notify_manager(db: AsyncSession, message: str, recipient_id: int, chat
     db.add(n)
 
 
-async def notify_admin(db: AsyncSession, message: str, recipient_id: int) -> None:
+async def notify_admin(
+    db: AsyncSession,
+    message: str,
+    recipient_id: Optional[int] = None,
+) -> None:
+    """Уведомление администратора. recipient_id=None — общий админ-канал."""
     from app.config import settings
     await _send_telegram(settings.admin_telegram_chat_id, message)
     n = Notification(
