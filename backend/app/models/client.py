@@ -16,4 +16,7 @@ class Client(Base):
     parent_phone: Mapped[str] = mapped_column(String(20))
     passport_data: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), default="active")  # active, inactive
+    # Группа, к которой прикреплён ученик — для фильтрации списков посещаемости.
+    # NULL = не прикреплён к группе (новый клиент).
+    group_name: Mapped[str | None] = mapped_column(String(100), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

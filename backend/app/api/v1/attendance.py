@@ -5,9 +5,10 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.auth import get_current_user
+from app.api.v1.auth import get_current_user, require_role
 from app.database import get_db
 from app.models.attendance import Attendance
 from app.models.client import Client
@@ -43,20 +44,30 @@ class AttendanceOut(BaseModel):
 async def get_lesson_students(
     lesson_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(select(Lesson).where(Lesson.id == lesson_id))
     lesson = result.scalar_one_or_none()
     if not lesson:
         raise HTTPException(404, "Занятие не найдено")
+    # Учитель видит только свои занятия
+    if current_user.role == "teacher" and lesson.teacher_id != current_user.id:
+        raise HTTPException(403, "Доступ только к своим занятиям")
 
-    # Return existing attendance records or active clients
+    # Список учеников ограничен группой урока — учитель не должен видеть
+    # детей из других групп. Если клиент ещё не прикреплён к группе
+    # (group_name IS NULL) — он не попадёт в список переклички.
     att_result = await db.execute(
         select(Attendance).where(Attendance.lesson_id == lesson_id)
     )
     existing = {a.client_id: a for a in att_result.scalars().all()}
 
-    clients_result = await db.execute(select(Client).where(Client.status == "active"))
+    clients_result = await db.execute(
+        select(Client).where(
+            Client.status == "active",
+            Client.group_name == lesson.group_name,
+        )
+    )
     clients = clients_result.scalars().all()
 
     return [
@@ -75,8 +86,35 @@ async def mark_attendance(
     lesson_id: int,
     body: MarkRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role("admin", "teacher")),
 ):
+    # Достаём урок (нужен и для проверки teacher_id, и для cross-group защиты).
+    lesson_res = await db.execute(select(Lesson).where(Lesson.id == lesson_id))
+    lesson = lesson_res.scalar_one_or_none()
+    if not lesson:
+        raise HTTPException(404, "Занятие не найдено")
+    if current_user.role == "teacher" and lesson.teacher_id != current_user.id:
+        raise HTTPException(403, "Доступ только к своим занятиям")
+
+    # Авторизация по группе: учитель не должен мочь подсунуть client_id ребёнка
+    # из чужой группы. Список GET /attendance/lessons/{id} это уже фильтровал,
+    # но POST /mark до сих пор принимал произвольные client_id.
+    requested_ids = [m.client_id for m in body.marks]
+    if requested_ids:
+        valid_res = await db.execute(
+            select(Client.id).where(
+                Client.id.in_(requested_ids),
+                Client.group_name == lesson.group_name,
+            )
+        )
+        valid_ids = {row[0] for row in valid_res.all()}
+        invalid = set(requested_ids) - valid_ids
+        if invalid:
+            raise HTTPException(
+                422,
+                f"Клиенты {sorted(invalid)} не принадлежат группе урока",
+            )
+
     now = datetime.now(timezone.utc)
     for mark in body.marks:
         result = await db.execute(
@@ -98,7 +136,26 @@ async def mark_attendance(
                 marked_by=current_user.id,
             ))
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Гонка: параллельный POST с другого устройства уже создал
+        # Attendance — UNIQUE-constraint срабатывает. Откатываем и
+        # повторяем как чистый UPDATE.
+        await db.rollback()
+        for mark in body.marks:
+            result = await db.execute(
+                select(Attendance).where(
+                    Attendance.lesson_id == lesson_id,
+                    Attendance.client_id == mark.client_id,
+                )
+            )
+            record = result.scalar_one_or_none()
+            if record:
+                record.present = mark.present
+                record.marked_at = now
+                record.marked_by = current_user.id
+        await db.commit()
     logger.info("Attendance marked for lesson %s by user %s", lesson_id, current_user.id)
 
     # Trigger payment check (Celery would be used in production)

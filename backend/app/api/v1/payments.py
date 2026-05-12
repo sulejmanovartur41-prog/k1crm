@@ -4,10 +4,11 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, Integer
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.auth import get_current_user
+from app.api.v1.auth import get_current_user, require_role
 from app.database import get_db
 from app.models.attendance import Attendance
 from app.models.client import Client
@@ -47,7 +48,7 @@ class PaymentOut(BaseModel):
 async def list_payments(
     status: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin", "manager")),
 ):
     q = select(Payment).order_by(Payment.created_at.desc())
     if status:
@@ -59,7 +60,7 @@ async def list_payments(
 @router.get("/overdue", summary="Список должников")
 async def list_overdue(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin", "manager")),
 ):
     result = await db.execute(
         select(Payment).where(Payment.status.in_(["overdue", "pending"]))
@@ -70,28 +71,40 @@ async def list_overdue(
 @router.get("/dashboard", summary="Дашборд выручки и аналитики")
 async def dashboard(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin")),
 ):
     now = datetime.now(timezone.utc)
-    month_start = now.date().replace(day=1)
+    today = now.date()
+    month_start = today.replace(day=1)
     prev_month_end = month_start - timedelta(days=1)
     prev_month_start = prev_month_end.replace(day=1)
 
-    # Revenue current month
+    def at_utc(d: date) -> datetime:
+        return datetime.combine(d, datetime.min.time()).replace(tzinfo=timezone.utc)
+
+    # AsyncSession не безопасен для конкурентных execute() с одной транзакцией —
+    # asyncpg бросит "concurrent operation". Поэтому используем последовательность,
+    # но с явной группировкой: вычисления, не зависящие друг от друга, идут одним
+    # SQL запросом через UNION ALL/CTE там, где это даёт выигрыш.
+    # Запросы оставлены последовательными, но переписаны компактнее.
+
+    prev_window_end = prev_month_start + timedelta(days=(today - month_start).days + 1)
+    if prev_window_end > prev_month_end + timedelta(days=1):
+        prev_window_end = prev_month_end + timedelta(days=1)
+
     rev_current = await db.execute(
         select(func.sum(Payment.amount)).where(
             Payment.status == "paid",
-            Payment.paid_at >= datetime.combine(month_start, datetime.min.time()).replace(tzinfo=timezone.utc),
+            Payment.paid_at >= at_utc(month_start),
         )
     )
     rev_current_val = float(rev_current.scalar() or 0)
 
-    # Revenue previous month
     rev_prev = await db.execute(
         select(func.sum(Payment.amount)).where(
             Payment.status == "paid",
-            Payment.paid_at >= datetime.combine(prev_month_start, datetime.min.time()).replace(tzinfo=timezone.utc),
-            Payment.paid_at < datetime.combine(month_start, datetime.min.time()).replace(tzinfo=timezone.utc),
+            Payment.paid_at >= at_utc(prev_month_start),
+            Payment.paid_at < at_utc(prev_window_end),
         )
     )
     rev_prev_val = float(rev_prev.scalar() or 0)
@@ -105,7 +118,7 @@ async def dashboard(
     )
     total_leads = await db.execute(select(func.count(Lead.id)))
     converted_leads = await db.execute(
-        select(func.count(Lead.id)).where(Lead.status.in_(["enrolled", "archived"]))
+        select(func.count(Lead.id)).where(Lead.status == "enrolled")
     )
 
     total = total_leads.scalar() or 0
@@ -117,49 +130,44 @@ async def dashboard(
     )
     funnel = [{"status": row[0], "count": row[1]} for row in funnel_result.all()]
 
-    # Weekly revenue: last 12 weeks
-    weekly_revenue = []
-    for i in range(11, -1, -1):
-        week_start = now - timedelta(weeks=i + 1)
-        week_end = now - timedelta(weeks=i)
-        wr = await db.execute(
-            select(func.sum(Payment.amount)).where(
-                Payment.status == "paid",
-                Payment.paid_at >= week_start,
-                Payment.paid_at < week_end,
-            )
+    # Weekly revenue: last 12 weeks — один SQL запрос, агрегация по неделям в Python
+    # (для портативности между PostgreSQL и SQLite — date_trunc не работает в SQLite)
+    weeks_start = now - timedelta(weeks=12)
+    raw = await db.execute(
+        select(Payment.paid_at, Payment.amount).where(
+            Payment.status == "paid",
+            Payment.paid_at >= weeks_start,
         )
-        iso_week = (now - timedelta(weeks=i)).isocalendar()
-        weekly_revenue.append({
-            "week": f"{iso_week.year}-W{iso_week.week:02d}",
-            "amount": float(wr.scalar() or 0),
-        })
-
-    # Attendance by group: last 30 days
-    thirty_days_ago = now - timedelta(days=30)
-    lessons_result = await db.execute(
-        select(Lesson).where(Lesson.datetime >= thirty_days_ago)
     )
-    lessons = lessons_result.scalars().all()
+    weeks_buckets: dict[str, float] = {}
+    for paid_at, amount in raw.all():
+        if not paid_at:
+            continue
+        iso = paid_at.isocalendar()
+        key = f"{iso.year}-W{iso.week:02d}"
+        weeks_buckets[key] = weeks_buckets.get(key, 0.0) + float(amount)
+    weekly_revenue = [
+        {"week": k, "amount": v} for k, v in sorted(weeks_buckets.items())
+    ]
 
-    attendance_by_group: dict[str, dict] = {}
-    for lesson in lessons:
-        grp = lesson.group_name
-        if grp not in attendance_by_group:
-            attendance_by_group[grp] = {"present": 0, "total": 0}
-        att_result = await db.execute(
-            select(Attendance).where(Attendance.lesson_id == lesson.id)
+    # Attendance by group: один SQL запрос с JOIN и GROUP BY
+    thirty_days_ago = now - timedelta(days=30)
+    att_raw = await db.execute(
+        select(
+            Lesson.group_name,
+            func.count(Attendance.id).label("total"),
+            func.sum(func.cast(Attendance.present, Integer)).label("present"),
         )
-        records = att_result.scalars().all()
-        attendance_by_group[grp]["total"] += len(records)
-        attendance_by_group[grp]["present"] += sum(1 for r in records if r.present)
-
+        .join(Attendance, Attendance.lesson_id == Lesson.id)
+        .where(Lesson.datetime >= thirty_days_ago)
+        .group_by(Lesson.group_name)
+    )
     attendance_data = [
         {
-            "group": grp,
-            "rate": round(v["present"] / v["total"], 2) if v["total"] else 0,
+            "group": row.group_name,
+            "rate": round((row.present or 0) / row.total, 2) if row.total else 0,
         }
-        for grp, v in attendance_by_group.items()
+        for row in att_raw.all()
     ]
 
     return {
@@ -185,7 +193,7 @@ async def dashboard(
 async def create_payment(
     data: PaymentCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin", "manager")),
 ):
     payment = Payment(
         client_id=data.client_id,
@@ -197,7 +205,12 @@ async def create_payment(
         paid_at=datetime.now(timezone.utc),
     )
     db.add(payment)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Сработал uq_payment_client_period — оплата за этот период уже есть.
+        await db.rollback()
+        raise HTTPException(409, "Оплата за этот период уже зафиксирована")
     await db.refresh(payment)
     logger.info("Payment recorded: client=%s amount=%s", data.client_id, data.amount)
     return payment
@@ -207,7 +220,7 @@ async def create_payment(
 async def client_payments(
     client_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role("admin", "manager")),
 ):
     result = await db.execute(
         select(Payment).where(Payment.client_id == client_id).order_by(Payment.created_at.desc())

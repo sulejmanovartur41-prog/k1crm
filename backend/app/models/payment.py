@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from sqlalchemy import String, DateTime, Date, Numeric, ForeignKey, func
+from sqlalchemy import String, DateTime, Date, Numeric, ForeignKey, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -7,6 +7,12 @@ from app.database import Base
 
 class Payment(Base):
     __tablename__ = "payments"
+    # Одна оплата на (клиент, период). Без constraint два менеджера случайно
+    # фиксируют одну и ту же оплату дважды — БД отдаёт IntegrityError, ручкой
+    # 409 на клиенте.
+    __table_args__ = (
+        UniqueConstraint("client_id", "period_from", "period_to", name="uq_payment_client_period"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
