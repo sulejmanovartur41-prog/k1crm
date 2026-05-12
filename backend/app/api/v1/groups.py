@@ -123,11 +123,11 @@ async def list_groups(
     result = await db.execute(q)
     items = []
     for group, students_count, teacher_name in result.all():
-        item = GroupListItem.model_validate(group)
-        item = item.model_copy(update={
-            "students_count": students_count,
-            "teacher_name": teacher_name,
-        })
+        item = GroupListItem(
+            **GroupOut.model_validate(group).model_dump(),
+            students_count=students_count or 0,
+            teacher_name=teacher_name,
+        )
         items.append(item)
     return items
 
