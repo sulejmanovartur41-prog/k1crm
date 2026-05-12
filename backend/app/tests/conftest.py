@@ -1,21 +1,30 @@
-import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.pool import StaticPool
 
+from app.api.v1.auth import _login_attempts
 from app.database import Base, get_db
 from app.main import app
 
-TEST_DB_URL = "sqlite+aiosqlite:///./test.db"
+TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
-test_engine = create_async_engine(TEST_DB_URL, echo=False)
+test_engine = create_async_engine(
+    TEST_DB_URL,
+    echo=False,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
 test_session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
 
-@pytest_asyncio.fixture(scope="session", autouse=True)
+@pytest_asyncio.fixture(scope="function", autouse=True)
 async def setup_db():
+    """Чистая схема и сброшенный rate-limit на каждый тест."""
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # In-memory rate-limit — общий между тестами, поэтому чистим.
+    _login_attempts.clear()
     yield
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)

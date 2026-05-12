@@ -32,6 +32,7 @@ async def test_mark_attendance_saves_records(client, db_session):
         parent_name="Ваня Вв",
         parent_phone="+7111222",
         status="active",
+        group_name="Группа А",
     )
     db_session.add(client_obj)
     await db_session.flush()
@@ -86,6 +87,7 @@ async def test_double_mark_updates_existing(client, db_session):
         parent_name="Маша М",
         parent_phone="+7333444",
         status="active",
+        group_name="Группа Б",
     )
     db_session.add(client_obj)
     await db_session.flush()
