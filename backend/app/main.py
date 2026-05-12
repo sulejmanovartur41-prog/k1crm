@@ -15,11 +15,20 @@ logger = logging.getLogger(__name__)
 
 
 async def seed_default_users():
-    """Create admin/manager/teacher test users if they don't exist."""
+    """Создаёт демо-аккаунты admin/manager/teacher.
+
+    Запускается ТОЛЬКО если settings.seed_demo_users=True (по умолчанию False).
+    Это защита от того, чтобы prod-инстанс с публичным IP не запускался
+    с известными паролями `admin123` и т.д.
+    """
     from sqlalchemy import select
     from app.database import async_session_maker
     from app.models.user import User
     from app.api.v1.auth import hash_password
+
+    if not settings.seed_demo_users:
+        logger.info("Demo users seeding skipped (SEED_DEMO_USERS=false)")
+        return
 
     defaults = [
         {"role": "admin", "name": "Администратор", "login": "admin", "password": "admin123"},
@@ -38,7 +47,7 @@ async def seed_default_users():
                         password_hash=hash_password(u["password"]),
                     ))
             await db.commit()
-        logger.info("Default users seeded")
+        logger.info("Default users seeded (dev mode)")
     except Exception as e:
         logger.warning("Could not seed default users (DB may not be ready): %s", e)
 
@@ -60,12 +69,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS — в prod строго один frontend_url; в dev допускаются localhost.
+_cors_origins = [settings.frontend_url]
+if settings.environment == "dev":
+    _cors_origins += ["http://localhost:3000", "http://localhost"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url, "http://localhost:3000", "http://localhost"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -86,7 +99,7 @@ app.include_router(attendance.router, prefix="/api/v1")
 app.include_router(payments.router, prefix="/api/v1")
 
 
-# Telegram bot webhook
+# Telegram bot webhook — проверяем secret_token, выставленный при setWebhook
 @app.post("/api/v1/bot/webhook", tags=["bot"])
 async def telegram_webhook(request: Request):
     from telegram import Update
@@ -94,6 +107,14 @@ async def telegram_webhook(request: Request):
     bot_app = create_bot_application()
     if bot_app is None:
         return JSONResponse({"status": "bot not configured"})
+
+    # X-Telegram-Bot-Api-Secret-Token задаётся через setWebhook?secret_token=...
+    # Должен содержать только [A-Za-z0-9_-], длина 1..256.
+    expected = settings.telegram_webhook_secret
+    got = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if expected and got != expected:
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+
     data = await request.json()
     update = Update.de_json(data, bot_app.bot)
     await bot_app.process_update(update)

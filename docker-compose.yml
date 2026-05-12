@@ -45,7 +45,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    # --proxy-headers + --forwarded-allow-ips заставляет uvicorn доверять
+    # X-Forwarded-For/X-Real-IP от nginx — иначе все клиенты выглядят как
+    # IP nginx-контейнера и rate-limit логина срабатывает на всех сразу.
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips='*'"
 
   celery_worker:
     build:

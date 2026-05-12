@@ -1,7 +1,7 @@
+import base64
 import logging
 import hmac
 import hashlib
-import time
 
 import httpx
 
@@ -20,6 +20,21 @@ class ZadarmaService:
             hashlib.sha1,
         ).hexdigest()
         return {"Authorization": f"{settings.zadarma_key}:{sign}"}
+
+    def verify_webhook(self, method: str, raw_body: bytes, signature: str) -> bool:
+        """
+        Zadarma подписывает уведомления так:
+            sign = base64(hmac_sha1(secret, method_path + body))
+        где `method_path` — путь обработчика на нашей стороне (например, "/zadarma/webhook").
+        В заголовке `Signature` приходит base64-строка.
+        """
+        if not settings.zadarma_secret or not signature:
+            return False
+        message = method.encode() + raw_body
+        expected = base64.b64encode(
+            hmac.new(settings.zadarma_secret.encode(), message, hashlib.sha1).digest()
+        ).decode()
+        return hmac.compare_digest(expected, signature)
 
     async def initiate_call(self, from_number: str, to_number: str) -> dict:
         if not settings.zadarma_key:

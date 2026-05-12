@@ -2,18 +2,27 @@ import logging
 import os
 from datetime import datetime
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 _template_dir = os.path.join(os.path.dirname(__file__), "..", "templates")
-_jinja_env = Environment(loader=FileSystemLoader(_template_dir))
+# autoescape — чтобы имена и паспортные данные не ломали HTML/PDF.
+_jinja_env = Environment(
+    loader=FileSystemLoader(_template_dir),
+    autoescape=select_autoescape(["html", "xml"]),
+)
 
 
 async def generate_contract_pdf(client, contract) -> str:
-    """Render contract HTML and convert to PDF with WeasyPrint."""
+    """Сгенерировать PDF договора.
+
+    В prod-окружении WeasyPrint обязателен — ImportError превращается в RuntimeError,
+    чтобы система не «молча» сохраняла HTML вместо подписываемого PDF.
+    В dev — допустимо сохранить HTML как fallback, для удобства локальной отладки.
+    """
     template = _jinja_env.get_template("contract.html")
     html_content = template.render(
         parent_name=client.parent_name,
@@ -34,12 +43,14 @@ async def generate_contract_pdf(client, contract) -> str:
         from weasyprint import HTML
         HTML(string=html_content).write_pdf(pdf_path)
         logger.info("PDF generated: %s", pdf_path)
-    except ImportError:
-        # WeasyPrint not available in dev — save HTML instead
+        return pdf_path
+    except ImportError as e:
+        if settings.environment != "dev":
+            logger.error("WeasyPrint missing in prod — refusing to fall back to HTML")
+            raise RuntimeError("WeasyPrint не установлен — PDF не сгенерирован") from e
+        # dev only — fallback в HTML для удобства локальной разработки.
         html_path = pdf_path.replace(".pdf", ".html")
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(html_content)
-        logger.warning("WeasyPrint unavailable, saved HTML: %s", html_path)
+        logger.warning("WeasyPrint unavailable (dev), saved HTML: %s", html_path)
         return html_path
-
-    return pdf_path
