@@ -1,19 +1,23 @@
-import { Layout, Menu, Typography, Button, ConfigProvider } from 'antd'
-import { PlusOutlined, FundOutlined } from '@ant-design/icons'
+import { Layout, Menu, Typography, Tag } from 'antd'
+import {
+  FundOutlined,
+  UserOutlined,
+  CalendarOutlined,
+  FileTextOutlined,
+  TeamOutlined,
+} from '@ant-design/icons'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import UserMenu from './UserMenu'
 
-const { Header, Content } = Layout
-const { Title } = Typography
-
-const PRIMARY = '#1677ff'
+const { Header, Sider, Content } = Layout
+const { Text } = Typography
 
 const MENU = [
-  { key: '/manager',           label: 'Воронка' },
-  { key: '/manager/leads',     label: 'Лиды' },
-  { key: '/manager/groups',    label: 'Группы' },
-  { key: '/manager/schedule',  label: 'Расписание' },
-  { key: '/manager/contracts', label: 'Договора' },
+  { key: '/manager',           icon: <FundOutlined />,     label: 'Воронка' },
+  { key: '/manager/leads',     icon: <UserOutlined />,     label: 'Лиды' },
+  { key: '/manager/groups',    icon: <TeamOutlined />,     label: 'Группы' },
+  { key: '/manager/schedule',  icon: <CalendarOutlined />, label: 'Расписание' },
+  { key: '/manager/contracts', icon: <FileTextOutlined />, label: 'Договора' },
 ]
 
 export default function ManagerLayout() {
@@ -26,50 +30,43 @@ export default function ManagerLayout() {
     .sort((a, b) => b.length - a.length)[0] ?? '/manager'
 
   return (
-    <ConfigProvider theme={{ token: { colorPrimary: PRIMARY } }}>
-      <Layout style={{ minHeight: '100vh', background: '#f5f7fa' }}>
+    <Layout style={{ minHeight: '100vh' }}>
+      <Sider width={220} style={{ background: '#001529' }}>
+        <div style={{ padding: '20px 16px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <Text style={{ color: '#fff', fontWeight: 700, fontSize: 16, display: 'block', lineHeight: 1.3 }}>
+            KiberOne CRM
+          </Text>
+          <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, letterSpacing: 1 }}>
+            ОТДЕЛ ПРОДАЖ
+          </Text>
+        </div>
+        <Menu
+          mode="inline"
+          theme="dark"
+          style={{ background: '#001529', borderRight: 0, paddingTop: 8 }}
+          selectedKeys={[selected]}
+          items={MENU}
+          onClick={({ key }) => navigate(key)}
+        />
+      </Sider>
+      <Layout>
         <Header style={{
-          background: `linear-gradient(90deg, ${PRIMARY} 0%, #4096ff 100%)`,
-          padding: '0 32px',
+          background: '#fff',
+          padding: '0 24px',
           display: 'flex',
+          justifyContent: 'space-between',
           alignItems: 'center',
-          gap: 32,
-          height: 64,
+          borderBottom: '1px solid #f0f0f0',
+          height: 56,
+          lineHeight: '56px',
         }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-            <Title level={4} style={{ color: '#fff', margin: 0 }}>
-              <FundOutlined /> KiberOne
-            </Title>
-            <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, letterSpacing: 1 }}>
-              · ОТДЕЛ ПРОДАЖ
-            </span>
-          </div>
-          <Menu
-            mode="horizontal"
-            theme="dark"
-            selectedKeys={[selected]}
-            items={MENU}
-            onClick={({ key }) => navigate(key)}
-            style={{
-              flex: 1,
-              background: 'transparent',
-              borderBottom: 'none',
-              fontSize: 14,
-            }}
-          />
-          <Button
-            type="default"
-            icon={<PlusOutlined />}
-            onClick={() => navigate('/manager/leads?new=1')}
-          >
-            Новый лид
-          </Button>
-          <UserMenu roleLabel="Менеджер" invertedText />
+          <Tag color="green" style={{ margin: 0, fontWeight: 600 }}>Менеджер</Tag>
+          <UserMenu roleLabel="Менеджер" />
         </Header>
-        <Content style={{ margin: '24px 32px' }}>
+        <Content style={{ margin: 24, padding: 24, background: '#fff', borderRadius: 6, minHeight: 280 }}>
           <Outlet />
         </Content>
       </Layout>
-    </ConfigProvider>
+    </Layout>
   )
 }

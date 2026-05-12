@@ -28,6 +28,7 @@ import dayjs from 'dayjs'
 import { getClientDetails, PaymentItem, AttendanceItem } from '../api/clients'
 import { createPayment } from '../api/payments'
 import { getRole } from '../auth'
+import api from '../api/client'
 
 const { Text, Title } = Typography
 
@@ -48,6 +49,20 @@ const CONTRACT_STATUS: Record<string, { color: string; label: string }> = {
   generated: { color: 'default', label: 'Сформирован' },
   signed:    { color: 'blue',    label: 'Подписан' },
   paid:      { color: 'green',   label: 'Оплачен' },
+}
+
+async function downloadPdf(contractId: number) {
+  try {
+    const res = await api.get(`/contracts/${contractId}/download`, { responseType: 'blob' })
+    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `contract_${contractId}.pdf`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    message.error('Не удалось скачать PDF')
+  }
 }
 
 interface Props {
@@ -255,10 +270,9 @@ export default function ClientDetailDrawer({ clientId, onClose }: Props) {
                     <Descriptions.Item label="Документ">
                       <Button
                         icon={<FilePdfOutlined />}
-                        href={`/storage/${data.contract.pdf_path}`}
-                        target="_blank"
                         type="link"
                         style={{ padding: 0 }}
+                        onClick={() => downloadPdf(data.contract!.id)}
                       >
                         Скачать PDF
                       </Button>

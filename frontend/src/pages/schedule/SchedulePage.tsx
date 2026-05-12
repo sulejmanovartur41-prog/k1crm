@@ -4,12 +4,15 @@ import { PlusOutlined } from '@ant-design/icons'
 import { useState } from 'react'
 import api from '../../api/client'
 import { listGroups } from '../../api/groups'
+import { getRole } from '../../auth'
 import dayjs from 'dayjs'
 
 const { Title } = Typography
 
 export default function SchedulePage() {
   const qc = useQueryClient()
+  const role = getRole()
+  const canManage = role === 'admin' || role === 'manager'
   const [open, setOpen] = useState(false)
   const [form] = Form.useForm()
 
@@ -21,6 +24,7 @@ export default function SchedulePage() {
   const { data: groups = [] } = useQuery({
     queryKey: ['groups', 'active'],
     queryFn: () => listGroups('active'),
+    enabled: canManage,
   })
 
   const createMutation = useMutation({
@@ -45,28 +49,32 @@ export default function SchedulePage() {
   return (
     <div>
       <Title level={3}>Расписание занятий</Title>
-      <Space style={{ marginBottom: 16 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
-          Добавить занятие
-        </Button>
-      </Space>
+      {canManage && (
+        <Space style={{ marginBottom: 16 }}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+            Добавить занятие
+          </Button>
+        </Space>
+      )}
       <Table rowKey="id" columns={columns} dataSource={lessons} loading={isLoading} size="middle" />
-      <Modal title="Новое занятие" open={open} onCancel={() => setOpen(false)} onOk={() => form.submit()} okText="Создать">
-        <Form form={form} layout="vertical" onFinish={(v) => createMutation.mutate(v)}>
-          <Form.Item name="group_id" label="Группа" rules={[{ required: true }]}>
-            <Select
-              options={groups.map(g => ({ value: g.id, label: g.name }))}
-              placeholder="Выберите группу"
-              showSearch
-              optionFilterProp="label"
-            />
-          </Form.Item>
-          <Form.Item name="teacher_id" label="ID преподавателя" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} /></Form.Item>
-          <Form.Item name="datetime" label="Дата и время" rules={[{ required: true }]}><DatePicker showTime style={{ width: '100%' }} /></Form.Item>
-          <Form.Item name="room" label="Аудитория"><Input /></Form.Item>
-          <Form.Item name="capacity" label="Вместимость" initialValue={12}><InputNumber style={{ width: '100%' }} /></Form.Item>
-        </Form>
-      </Modal>
+      {canManage && (
+        <Modal title="Новое занятие" open={open} onCancel={() => setOpen(false)} onOk={() => form.submit()} okText="Создать">
+          <Form form={form} layout="vertical" onFinish={(v) => createMutation.mutate(v)}>
+            <Form.Item name="group_id" label="Группа" rules={[{ required: true }]}>
+              <Select
+                options={groups.map(g => ({ value: g.id, label: g.name }))}
+                placeholder="Выберите группу"
+                showSearch
+                optionFilterProp="label"
+              />
+            </Form.Item>
+            <Form.Item name="teacher_id" label="ID преподавателя" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} /></Form.Item>
+            <Form.Item name="datetime" label="Дата и время" rules={[{ required: true }]}><DatePicker showTime style={{ width: '100%' }} /></Form.Item>
+            <Form.Item name="room" label="Аудитория"><Input /></Form.Item>
+            <Form.Item name="capacity" label="Вместимость" initialValue={12}><InputNumber style={{ width: '100%' }} /></Form.Item>
+          </Form>
+        </Modal>
+      )}
     </div>
   )
 }
