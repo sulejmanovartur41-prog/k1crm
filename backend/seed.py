@@ -9,7 +9,7 @@ import asyncio
 import calendar
 import os
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -65,13 +65,28 @@ GROUPS = [
     {"name": "Игровой дизайн (10–14 лет)", "level": "Game 10-14",   "room": "Кабинет 1", "teacher_login": "teacher2", "color": "#fa8c16", "description": "Введение в Unity и проектирование уровней."},
 ]
 
-# 6 занятий на группу: 5 прошедших + 1 предстоящее
-GROUP_LESSON_DATES = [
-    [dt(2026,3,16,15), dt(2026,3,23,15), dt(2026,4,7,15),     dt(2026,4,21,15), dt(2026,5,5,15),  dt(2026,5,19,15)],
-    [dt(2026,3,17,16), dt(2026,3,24,16), dt(2026,4,8,16),     dt(2026,4,22,16), dt(2026,5,6,16),  dt(2026,5,20,16)],
-    [dt(2026,3,16,17,30), dt(2026,3,23,17,30), dt(2026,4,6,17,30), dt(2026,4,20,17,30), dt(2026,5,4,17,30), dt(2026,5,18,17,30)],
-    [dt(2026,3,14,11), dt(2026,3,21,11), dt(2026,4,4,11),     dt(2026,4,18,11), dt(2026,5,2,11),  dt(2026,5,16,11)],
+# Расписание групп: (iso_weekdays, hour, minute)
+# Даты вычисляются от date.today() при запуске seed → 5 прошедших + 3 предстоящих
+GROUP_SCHEDULES = [
+    {"weekdays": (1, 4), "hour": 15, "minute": 0},   # Scratch: Пн+Чт 15:00
+    {"weekdays": (2, 5), "hour": 16, "minute": 0},   # Python:  Вт+Пт 16:00
+    {"weekdays": (1, 3), "hour": 17, "minute": 30},  # Web:     Пн+Ср 17:30
+    {"weekdays": (2, 6), "hour": 11, "minute": 0},   # Game:    Вт+Сб 11:00
 ]
+
+
+def make_lesson_dates(today: date, weekdays: tuple, hour: int, minute: int = 0) -> list:
+    """5 прошедших + 3 предстоящих урока на заданных ISO-днях недели (1=Пн)."""
+    pool: list = []
+    d = today - timedelta(weeks=6)
+    while d <= today + timedelta(weeks=3):
+        if (d.weekday() + 1) in weekdays:
+            pool.append(datetime(d.year, d.month, d.day, hour, minute, tzinfo=UTC))
+        d += timedelta(days=1)
+    now = datetime.now(UTC)
+    past = [x for x in pool if x < now]
+    future = [x for x in pool if x >= now]
+    return past[-5:] + future[:3]
 
 # ─────────────────────────────────────────────
 # 3. ЛИДЫ (40 штук)
@@ -215,9 +230,11 @@ async def seed():
         await s.flush()
         print(f"✓ Групп создано: {len(group_objects)}")
 
+        today = datetime.now(UTC).date()
         lessons_by_group = []  # список списков объектов Lesson
-        for g, group_obj, dates in zip(GROUPS, group_objects, GROUP_LESSON_DATES):
+        for g, group_obj, sched in zip(GROUPS, group_objects, GROUP_SCHEDULES):
             teacher = teacher_map[g["teacher_login"]]
+            dates = make_lesson_dates(today, sched["weekdays"], sched["hour"], sched.get("minute", 0))
             group_lessons = []
             for lesson_dt in dates:
                 lesson = Lesson(
@@ -270,7 +287,7 @@ async def seed():
                 attempts=lr.get("attempts", 0),
                 escalated=lr.get("escalated", False),
                 completed=completed,
-                next_call_at=None if completed else dt(2026, 5, 13),
+                next_call_at=None if completed else now_dt + timedelta(days=1),
                 created_at=lr["created"],
             ))
         await s.flush()
