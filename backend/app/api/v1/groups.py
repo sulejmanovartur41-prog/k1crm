@@ -178,9 +178,10 @@ async def get_group(
         )
         .group_by(Attendance.client_id)
     )
+    # Fraction 0-1 (same representation as dashboard attendance_by_group.rate)
     att_map: dict[int, float] = {}
     for client_id, total, present_count in att_res.all():
-        att_map[client_id] = round((present_count or 0) / total * 100) if total else 0.0
+        att_map[client_id] = round((present_count or 0) / total, 2) if total else 0.0
 
     # Last payment status per student
     pay_res = await db.execute(

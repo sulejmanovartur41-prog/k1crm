@@ -1,0 +1,25 @@
+# Dev-only overrides: bind-mounts + --reload for hot-reload.
+# Docker Compose automatically merges this file in development.
+# In production: docker compose -f docker-compose.yml up
+version: "3.9"
+
+services:
+  backend:
+    volumes:
+      - ./backend:/app
+      - storage_data:/app/storage
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips='*'"
+
+  celery_worker:
+    volumes:
+      - ./backend:/app
+      - storage_data:/app/storage
+
+  celery_beat:
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules

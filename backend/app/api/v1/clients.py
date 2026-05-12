@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,8 +21,8 @@ router = APIRouter(prefix="/clients", tags=["clients"])
 class PaymentItem(BaseModel):
     id: int
     amount: float
-    period_from: str
-    period_to: str
+    period_from: date
+    period_to: date
     status: str
     method: Optional[str]
     paid_at: Optional[datetime]
@@ -45,7 +45,7 @@ class ContractInfo(BaseModel):
 class ClientDetails(BaseModel):
     id: int
     child_name: str
-    child_birth_date: str
+    child_birth_date: date
     parent_name: str
     parent_phone: str
     passport_data: Optional[str]
@@ -89,8 +89,8 @@ async def client_details(
         PaymentItem(
             id=p.id,
             amount=float(p.amount),
-            period_from=str(p.period_from),
-            period_to=str(p.period_to),
+            period_from=p.period_from,
+            period_to=p.period_to,
             status=p.status,
             method=p.method,
             paid_at=p.paid_at,
@@ -136,7 +136,7 @@ async def client_details(
     return ClientDetails(
         id=client.id,
         child_name=client.child_name,
-        child_birth_date=str(client.child_birth_date),
+        child_birth_date=client.child_birth_date,
         parent_name=client.parent_name,
         parent_phone=client.parent_phone,
         passport_data=client.passport_data,

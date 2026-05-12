@@ -27,8 +27,8 @@ import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
 import { getClientDetails, PaymentItem, AttendanceItem } from '../api/clients'
 import { createPayment } from '../api/payments'
+import { downloadContractPdf } from '../api/contracts'
 import { getRole } from '../auth'
-import api from '../api/client'
 
 const { Text, Title } = Typography
 
@@ -51,21 +51,6 @@ const CONTRACT_STATUS: Record<string, { color: string; label: string }> = {
   paid:      { color: 'green',   label: 'Оплачен' },
 }
 
-async function downloadPdf(contractId: number) {
-  try {
-    const res = await api.get(`/contracts/${contractId}/download`, { responseType: 'blob' })
-    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
-    const a = document.createElement('a')
-    a.style.display = 'none'
-    a.href = url
-    a.download = `contract_${contractId}.pdf`
-    document.body.appendChild(a)
-    a.click()
-    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 100)
-  } catch {
-    message.error('PDF не найден или ещё не сформирован')
-  }
-}
 
 interface Props {
   clientId: number | null
@@ -113,7 +98,7 @@ export default function ClientDetailDrawer({ clientId, onClose }: Props) {
       dataIndex: 'amount',
       width: 100,
       align: 'right',
-      render: (a: number) => `${a.toLocaleString()} ₽`,
+      render: (a: number) => `${a.toLocaleString('ru')} ₽`,
     },
     {
       title: 'Статус',
@@ -261,7 +246,7 @@ export default function ClientDetailDrawer({ clientId, onClose }: Props) {
                     })()}
                   </Descriptions.Item>
                   <Descriptions.Item label="Сумма">
-                    {data.contract.amount.toLocaleString()} ₽
+                    {data.contract.amount.toLocaleString('ru')} ₽
                   </Descriptions.Item>
                   {data.contract.signed_at && (
                     <Descriptions.Item label="Подписан">
@@ -274,7 +259,7 @@ export default function ClientDetailDrawer({ clientId, onClose }: Props) {
                         icon={<FilePdfOutlined />}
                         type="link"
                         style={{ padding: 0 }}
-                        onClick={() => downloadPdf(data.contract!.id)}
+                        onClick={() => downloadContractPdf(data.contract!.id)}
                       >
                         Скачать PDF
                       </Button>

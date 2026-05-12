@@ -110,9 +110,10 @@ export default function GroupDetail() {
       )
     : null
 
+  // attendance_rate is a 0-1 fraction from the backend
   const studentsWithAtt = group.students.filter(s => s.attendance_rate !== null)
   const avgAttendance = studentsWithAtt.length > 0
-    ? Math.round(studentsWithAtt.reduce((sum, s) => sum + (s.attendance_rate ?? 0), 0) / studentsWithAtt.length)
+    ? Math.round(studentsWithAtt.reduce((sum, s) => sum + (s.attendance_rate ?? 0), 0) / studentsWithAtt.length * 100)
     : null
 
   const paidCount = group.students.filter(s => s.payment_status === 'paid').length
@@ -153,10 +154,11 @@ export default function GroupDetail() {
       width: 170,
       render: (rate: number | null) => {
         if (rate === null) return <Text type="secondary">нет данных</Text>
-        const color = rate >= 80 ? '#52c41a' : rate >= 50 ? '#faad14' : '#ff4d4f'
+        const pct = Math.round(rate * 100)
+        const color = pct >= 80 ? '#52c41a' : pct >= 50 ? '#faad14' : '#ff4d4f'
         return (
-          <Tooltip title={`${rate}%`}>
-            <Progress percent={rate} size="small" strokeColor={color} style={{ width: 120 }} />
+          <Tooltip title={`${pct}%`}>
+            <Progress percent={pct} size="small" strokeColor={color} style={{ width: 120 }} />
           </Tooltip>
         )
       },

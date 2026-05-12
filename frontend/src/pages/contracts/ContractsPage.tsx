@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Table, Tag, Button, Typography, message, Space } from 'antd'
 import { CheckOutlined, DownloadOutlined, FilePdfOutlined } from '@ant-design/icons'
-import api from '../../api/client'
 import dayjs from 'dayjs'
+import { downloadContractPdf, generateAndDownloadPdf } from '../../api/contracts'
 
 const { Title } = Typography
 
@@ -15,41 +15,6 @@ const STATUS_COLORS: Record<string, string> = {
   generated: 'blue',
   signed: 'green',
   paid: 'gold',
-}
-
-async function downloadContractPdf(contractId: number) {
-  try {
-    const res = await api.get(`/contracts/${contractId}/download`, { responseType: 'blob' })
-    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
-    const a = document.createElement('a')
-    a.style.display = 'none'
-    a.href = url
-    a.download = `contract_${contractId}.pdf`
-    document.body.appendChild(a)
-    a.click()
-    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 100)
-  } catch {
-    message.error('Не удалось скачать PDF')
-  }
-}
-
-async function generateAndDownloadPdf(contractId: number) {
-  try {
-    message.loading({ content: 'Формируем PDF...', key: 'pdf' })
-    const res = await api.post(`/contracts/${contractId}/generate-pdf`, null, { responseType: 'blob' })
-    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
-    const a = document.createElement('a')
-    a.style.display = 'none'
-    a.href = url
-    a.download = `contract_${contractId}.pdf`
-    document.body.appendChild(a)
-    a.click()
-    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 100)
-    message.success({ content: 'PDF готов', key: 'pdf' })
-  } catch (e: any) {
-    const detail = e?.response?.data ? 'Ошибка формирования PDF' : 'Нет соединения'
-    message.error({ content: detail, key: 'pdf' })
-  }
 }
 
 export default function ContractsPage() {

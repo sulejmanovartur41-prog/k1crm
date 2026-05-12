@@ -3,7 +3,7 @@ from datetime import datetime, timezone, date, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select, func, Integer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,10 +25,16 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 
 class PaymentCreate(BaseModel):
     client_id: int
-    amount: float
+    amount: float = Field(gt=0, description="Сумма оплаты (₽), должна быть > 0")
     period_from: date
     period_to: date
     method: str  # cash, qr
+
+    @model_validator(mode="after")
+    def period_order(self) -> "PaymentCreate":
+        if self.period_from >= self.period_to:
+            raise ValueError("period_from должна быть раньше period_to")
+        return self
 
 
 class PaymentOut(BaseModel):
@@ -89,14 +95,12 @@ async def dashboard(
     # SQL запросом через UNION ALL/CTE там, где это даёт выигрыш.
     # Запросы оставлены последовательными, но переписаны компактнее.
 
-    prev_window_end = prev_month_start + timedelta(days=(today - month_start).days + 1)
-    if prev_window_end > prev_month_end + timedelta(days=1):
-        prev_window_end = prev_month_end + timedelta(days=1)
-
+    # Compare current month YTD vs full previous month for a stable delta.
     rev_current = await db.execute(
         select(func.sum(Payment.amount)).where(
             Payment.status == "paid",
             Payment.paid_at >= at_utc(month_start),
+            Payment.paid_at < at_utc(today),
         )
     )
     rev_current_val = float(rev_current.scalar() or 0)
@@ -105,7 +109,7 @@ async def dashboard(
         select(func.sum(Payment.amount)).where(
             Payment.status == "paid",
             Payment.paid_at >= at_utc(prev_month_start),
-            Payment.paid_at < at_utc(prev_window_end),
+            Payment.paid_at < at_utc(month_start),
         )
     )
     rev_prev_val = float(rev_prev.scalar() or 0)
@@ -197,6 +201,10 @@ async def create_payment(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role("admin", "manager")),
 ):
+    client_check = await db.execute(select(Client).where(Client.id == data.client_id))
+    if not client_check.scalar_one_or_none():
+        raise HTTPException(404, "Клиент не найден")
+
     payment = Payment(
         client_id=data.client_id,
         amount=data.amount,

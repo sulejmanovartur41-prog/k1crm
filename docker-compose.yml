@@ -6,7 +6,7 @@ services:
     container_name: kibrone_postgres
     environment:
       POSTGRES_USER: kibrone
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: kibrone
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -38,7 +38,6 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
       - storage_data:/app/storage
     depends_on:
       postgres:
@@ -48,7 +47,7 @@ services:
     # --proxy-headers + --forwarded-allow-ips заставляет uvicorn доверять
     # X-Forwarded-For/X-Real-IP от nginx — иначе все клиенты выглядят как
     # IP nginx-контейнера и rate-limit логина срабатывает на всех сразу.
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips='*'"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
 
   celery_worker:
     build:
@@ -57,7 +56,6 @@ services:
     container_name: kibrone_celery_worker
     env_file: .env
     volumes:
-      - ./backend:/app
       - storage_data:/app/storage
     depends_on:
       postgres:
@@ -72,8 +70,6 @@ services:
       dockerfile: Dockerfile
     container_name: kibrone_celery_beat
     env_file: .env
-    volumes:
-      - ./backend:/app
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,9 +84,6 @@ services:
     container_name: kibrone_frontend
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     environment:
       - REACT_APP_API_URL=http://localhost/api
     depends_on:

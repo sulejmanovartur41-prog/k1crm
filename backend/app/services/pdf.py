@@ -28,7 +28,7 @@ async def generate_contract_pdf(client, contract) -> str:
         parent_name=client.parent_name,
         child_name=client.child_name,
         child_birth_date=client.child_birth_date.strftime("%d.%m.%Y"),
-        amount=f"{contract.amount:,.0f}",
+        amount=f"{contract.amount:,.0f}".replace(",", " "),
         date=datetime.now().strftime("%d.%m.%Y"),
         lesson_schedule="по расписанию",
     )

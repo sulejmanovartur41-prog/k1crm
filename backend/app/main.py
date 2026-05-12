@@ -62,11 +62,15 @@ async def lifespan(app: FastAPI):
     logger.info("KiberOne backend stopped")
 
 
+_is_dev = settings.environment == "dev"
 app = FastAPI(
     title="KiberOne CRM",
     description="Информационная система управления школой программирования KiberOne",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if _is_dev else None,
+    redoc_url="/redoc" if _is_dev else None,
+    openapi_url="/openapi.json" if _is_dev else None,
 )
 
 # CORS — в prod строго один frontend_url; в dev допускаются localhost.
