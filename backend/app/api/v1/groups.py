@@ -4,15 +4,17 @@ from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import Integer, select, func, cast
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.auth import get_current_user, require_role
 from app.database import get_db
+from app.models.attendance import Attendance
 from app.models.client import Client
 from app.models.group import Group
 from app.models.lesson import Lesson
+from app.models.payment import Payment
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -67,9 +69,12 @@ class GroupListItem(GroupOut):
 class GroupStudent(BaseModel):
     id: int
     child_name: str
+    child_birth_date: Optional[date]
     parent_name: str
     parent_phone: str
     status: str
+    attendance_rate: Optional[float]   # % present за последние 30 дней, None если уроков не было
+    payment_status: Optional[str]      # статус последнего платежа
 
 
 class GroupLessonItem(BaseModel):
@@ -155,15 +160,51 @@ async def get_group(
         .where(Client.group_id == group_id)
         .order_by(Client.child_name)
     )
+    raw_students = students_res.scalars().all()
+
+    # Attendance stats for the last 30 days: lessons in [cutoff, now]
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    att_res = await db.execute(
+        select(
+            Attendance.client_id,
+            func.count().label("total"),
+            func.sum(cast(Attendance.present, Integer)).label("present_count"),
+        )
+        .join(Lesson, Lesson.id == Attendance.lesson_id)
+        .where(
+            Attendance.client_id.in_([c.id for c in raw_students]),
+            Lesson.group_id == group_id,
+            Lesson.datetime >= cutoff,
+        )
+        .group_by(Attendance.client_id)
+    )
+    att_map: dict[int, float] = {}
+    for client_id, total, present_count in att_res.all():
+        att_map[client_id] = round((present_count or 0) / total * 100) if total else 0.0
+
+    # Last payment status per student
+    pay_res = await db.execute(
+        select(Payment.client_id, Payment.status)
+        .where(Payment.client_id.in_([c.id for c in raw_students]))
+        .order_by(Payment.client_id, Payment.created_at.desc())
+    )
+    pay_map: dict[int, str] = {}
+    for client_id, pay_status in pay_res.all():
+        if client_id not in pay_map:
+            pay_map[client_id] = pay_status
+
     students = [
         GroupStudent(
             id=c.id,
             child_name=c.child_name,
+            child_birth_date=c.child_birth_date,
             parent_name=c.parent_name,
             parent_phone=c.parent_phone,
             status=c.status,
+            attendance_rate=att_map.get(c.id),
+            payment_status=pay_map.get(c.id),
         )
-        for c in students_res.scalars().all()
+        for c in raw_students
     ]
 
     now = datetime.now(timezone.utc)

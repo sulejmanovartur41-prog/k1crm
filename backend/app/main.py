@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.database import engine
-from app.api.v1 import auth, leads, calls, schedule, contracts, attendance, payments, groups
+from app.api.v1 import auth, leads, calls, schedule, contracts, attendance, payments, groups, clients
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -98,6 +98,7 @@ app.include_router(contracts.router, prefix="/api/v1")
 app.include_router(attendance.router, prefix="/api/v1")
 app.include_router(payments.router, prefix="/api/v1")
 app.include_router(groups.router, prefix="/api/v1")
+app.include_router(clients.router, prefix="/api/v1")
 
 
 # Telegram bot webhook — проверяем secret_token, выставленный при setWebhook
