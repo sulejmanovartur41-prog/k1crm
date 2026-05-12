@@ -11,8 +11,9 @@
   table { width: 100%; border-collapse: collapse; margin: 1em 0; }
   td, th { border: 1px solid #000; padding: 4px 8px; }
   th { background: #f0f0f0; }
-  .signatures { margin-top: 3em; display: flex; justify-content: space-between; }
-  .sig-block { width: 45%; }
+  .signatures { margin-top: 3em; width: 100%; }
+  .sig-block { width: 45%; display: inline-block; vertical-align: top; }
+  .sig-block:first-child { margin-right: 10%; }
   .sig-line { border-top: 1px solid #000; margin-top: 3em; padding-top: 4px; font-size: 10pt; }
   @media print {
     body { margin: 2cm; }
