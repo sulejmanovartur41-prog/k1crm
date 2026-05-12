@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 from app.api.v1.auth import hash_password
 from app.models.user import User
 from app.models.lead import Lead
+from app.models.group import Group
 from app.models.client import Client
 from app.models.lesson import Lesson
 from app.models.attendance import Attendance
@@ -22,7 +23,8 @@ async def test_mark_attendance_saves_records(client, db_session):
     headers = {"Authorization": f"Bearer {token}"}
 
     lead = Lead(name="Л", phone="+7111222", source="phone", status="enrolled")
-    db_session.add(lead)
+    group = Group(name="Группа А", teacher_id=user.id, capacity=12)
+    db_session.add_all([lead, group])
     await db_session.flush()
 
     client_obj = Client(
@@ -32,13 +34,13 @@ async def test_mark_attendance_saves_records(client, db_session):
         parent_name="Ваня Вв",
         parent_phone="+7111222",
         status="active",
-        group_name="Группа А",
+        group_id=group.id,
     )
     db_session.add(client_obj)
     await db_session.flush()
 
     lesson = Lesson(
-        group_name="Группа А",
+        group_id=group.id,
         teacher_id=user.id,
         datetime=datetime(2026, 5, 10, 10, 0, tzinfo=timezone.utc),
         capacity=12,
@@ -77,7 +79,8 @@ async def test_double_mark_updates_existing(client, db_session):
     headers = {"Authorization": f"Bearer {token}"}
 
     lead = Lead(name="Л2", phone="+7333444", source="phone", status="enrolled")
-    db_session.add(lead)
+    group = Group(name="Группа Б", teacher_id=user.id, capacity=12)
+    db_session.add_all([lead, group])
     await db_session.flush()
 
     client_obj = Client(
@@ -87,13 +90,13 @@ async def test_double_mark_updates_existing(client, db_session):
         parent_name="Маша М",
         parent_phone="+7333444",
         status="active",
-        group_name="Группа Б",
+        group_id=group.id,
     )
     db_session.add(client_obj)
     await db_session.flush()
 
     lesson = Lesson(
-        group_name="Группа Б",
+        group_id=group.id,
         teacher_id=user.id,
         datetime=datetime(2026, 5, 11, 11, 0, tzinfo=timezone.utc),
         capacity=12,

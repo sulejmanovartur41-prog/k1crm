@@ -8,6 +8,7 @@ from sqlalchemy import select
 from datetime import datetime, timezone
 
 from app.config import settings
+from app.models.group import Group
 from app.models.lead import Lead
 from app.models.lesson import Lesson
 from app.models.trial_booking import TrialBooking
@@ -23,11 +24,12 @@ async def test_intake_ignores_client_amount(client, db_session):
     await db_session.flush()
 
     lead = Lead(name="X", phone="+7000", source="site", status="enrolled")
-    db_session.add(lead)
+    group = Group(name="G", teacher_id=teacher.id, capacity=12)
+    db_session.add_all([lead, group])
     await db_session.flush()
 
     lesson = Lesson(
-        group_name="G",
+        group_id=group.id,
         teacher_id=teacher.id,
         datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
         capacity=12,

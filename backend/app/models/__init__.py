@@ -1,5 +1,6 @@
 from app.models.user import User
 from app.models.lead import Lead
+from app.models.group import Group
 from app.models.client import Client
 from app.models.contract import Contract
 from app.models.lesson import Lesson
@@ -10,6 +11,6 @@ from app.models.call_task import CallTask
 from app.models.notification import Notification
 
 __all__ = [
-    "User", "Lead", "Client", "Contract", "Lesson",
+    "User", "Lead", "Group", "Client", "Contract", "Lesson",
     "TrialBooking", "Attendance", "Payment", "CallTask", "Notification",
 ]

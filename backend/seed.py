@@ -21,6 +21,7 @@ sys.path.insert(0, "/app")
 from app.api.v1.auth import hash_password
 from app.models.user import User
 from app.models.lead import Lead
+from app.models.group import Group
 from app.models.client import Client
 from app.models.contract import Contract
 from app.models.lesson import Lesson
@@ -58,10 +59,10 @@ EXTRA_USERS = [
 # 2. ГРУППЫ И РАСПИСАНИЕ ЗАНЯТИЙ
 # ─────────────────────────────────────────────
 GROUPS = [
-    {"name": "Scratch (7–9 лет)",          "room": "Кабинет 1", "teacher_login": "teacher"},
-    {"name": "Python: Основы (10–13 лет)", "room": "Кабинет 2", "teacher_login": "teacher"},
-    {"name": "Web-разработка (12–15 лет)", "room": "Кабинет 3", "teacher_login": "teacher2"},
-    {"name": "Игровой дизайн (10–14 лет)", "room": "Кабинет 1", "teacher_login": "teacher2"},
+    {"name": "Scratch (7–9 лет)",          "level": "Scratch 7-9",  "room": "Кабинет 1", "teacher_login": "teacher",  "color": "#722ed1", "description": "Визуальное программирование для младших школьников."},
+    {"name": "Python: Основы (10–13 лет)", "level": "Python 10-13", "room": "Кабинет 2", "teacher_login": "teacher",  "color": "#1677ff", "description": "Базовый синтаксис, условия, циклы, функции."},
+    {"name": "Web-разработка (12–15 лет)", "level": "Web 12-15",    "room": "Кабинет 3", "teacher_login": "teacher2", "color": "#13c2c2", "description": "HTML, CSS, JavaScript, мини-проекты."},
+    {"name": "Игровой дизайн (10–14 лет)", "level": "Game 10-14",   "room": "Кабинет 1", "teacher_login": "teacher2", "color": "#fa8c16", "description": "Введение в Unity и проектирование уровней."},
 ]
 
 # 6 занятий на группу: 5 прошедших + 1 предстоящее
@@ -194,16 +195,33 @@ async def seed():
 
         print(f"✓ Пользователей в БД: {len(users_by_login)}")
 
-        # ── 2. Занятия ────────────────────────────────────────────────
+        # ── 2. Группы и занятия ───────────────────────────────────────
         teacher_map = {"teacher": t1, "teacher2": t2}
-        lessons_by_group = []  # список списков объектов Lesson
+        group_objects = []
+        for g in GROUPS:
+            teacher = teacher_map[g["teacher_login"]]
+            group = Group(
+                name=g["name"],
+                level=g["level"],
+                teacher_id=teacher.id,
+                room=g["room"],
+                capacity=12,
+                color=g["color"],
+                status="active",
+                description=g["description"],
+            )
+            s.add(group)
+            group_objects.append(group)
+        await s.flush()
+        print(f"✓ Групп создано: {len(group_objects)}")
 
-        for g_idx, (g, dates) in enumerate(zip(GROUPS, GROUP_LESSON_DATES)):
+        lessons_by_group = []  # список списков объектов Lesson
+        for g, group_obj, dates in zip(GROUPS, group_objects, GROUP_LESSON_DATES):
             teacher = teacher_map[g["teacher_login"]]
             group_lessons = []
             for lesson_dt in dates:
                 lesson = Lesson(
-                    group_name=g["name"],
+                    group_id=group_obj.id,
                     teacher_id=teacher.id,
                     datetime=lesson_dt,
                     room=g["room"],
@@ -278,7 +296,7 @@ async def seed():
                 parent_phone=lead.phone,
                 passport_data=passport,
                 status=cl_status,
-                group_name=GROUPS[g_idx]["name"],
+                group_id=group_objects[g_idx].id,
                 created_at=join_dt,
             )
             s.add(client)

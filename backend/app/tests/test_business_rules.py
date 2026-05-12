@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.api.v1.auth import hash_password
 from app.config import settings
 from app.models.client import Client
+from app.models.group import Group
 from app.models.lead import Lead
 from app.models.lesson import Lesson
 from app.models.user import User
@@ -49,10 +50,14 @@ async def test_create_lesson_rejects_non_teacher_user(client, db_session):
     login_resp = await client.post("/api/v1/auth/login", data={"username": "bl_admin", "password": "p"})
     headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
 
+    group = Group(name="Группа X", capacity=12)
+    db_session.add(group)
+    await db_session.commit()
+
     resp = await client.post(
         "/api/v1/schedule/lessons",
         json={
-            "group_name": "Группа X",
+            "group_id": group.id,
             "teacher_id": admin.id,  # admin, а не teacher
             "datetime": "2030-01-01T10:00:00+00:00",
             "capacity": 12,
@@ -64,9 +69,14 @@ async def test_create_lesson_rejects_non_teacher_user(client, db_session):
 
 @pytest.mark.asyncio
 async def test_teacher_sees_only_own_group_clients(client, db_session):
-    """GET /attendance/lessons/{id} возвращает только клиентов из group_name урока."""
+    """GET /attendance/lessons/{id} возвращает только клиентов из group_id урока."""
     teacher = User(role="teacher", name="T", login="grp_t", password_hash=hash_password("p"))
     db_session.add(teacher)
+    await db_session.flush()
+
+    group_scratch = Group(name="Scratch", teacher_id=teacher.id, capacity=12)
+    group_web = Group(name="Web", teacher_id=teacher.id, capacity=12)
+    db_session.add_all([group_scratch, group_web])
     await db_session.flush()
 
     lead_a = Lead(name="A", phone="+71", source="phone", status="enrolled")
@@ -78,18 +88,18 @@ async def test_teacher_sees_only_own_group_clients(client, db_session):
     client_a = Client(
         lead_id=lead_a.id, child_name="Аня", child_birth_date=date(2018, 1, 1),
         parent_name="A-родитель", parent_phone="+71", status="active",
-        group_name="Scratch",
+        group_id=group_scratch.id,
     )
     client_b = Client(
         lead_id=lead_b.id, child_name="Боря", child_birth_date=date(2018, 1, 1),
         parent_name="B-родитель", parent_phone="+72", status="active",
-        group_name="Web",
+        group_id=group_web.id,
     )
     db_session.add_all([client_a, client_b])
     await db_session.flush()
 
     lesson = Lesson(
-        group_name="Scratch",
+        group_id=group_scratch.id,
         teacher_id=teacher.id,
         datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
         capacity=12,
@@ -116,9 +126,14 @@ async def test_teacher_lessons_filtered_by_teacher_id(client, db_session):
     db_session.add_all([t1, t2])
     await db_session.flush()
 
+    g_a = Group(name="A", teacher_id=t1.id, capacity=12)
+    g_b = Group(name="B", teacher_id=t2.id, capacity=12)
+    db_session.add_all([g_a, g_b])
+    await db_session.flush()
+
     db_session.add_all([
-        Lesson(group_name="A", teacher_id=t1.id, datetime=datetime(2030, 1, 1, 10, tzinfo=timezone.utc), capacity=12),
-        Lesson(group_name="B", teacher_id=t2.id, datetime=datetime(2030, 1, 1, 11, tzinfo=timezone.utc), capacity=12),
+        Lesson(group_id=g_a.id, teacher_id=t1.id, datetime=datetime(2030, 1, 1, 10, tzinfo=timezone.utc), capacity=12),
+        Lesson(group_id=g_b.id, teacher_id=t2.id, datetime=datetime(2030, 1, 1, 11, tzinfo=timezone.utc), capacity=12),
     ])
     await db_session.commit()
 

@@ -4,6 +4,7 @@ from sqlalchemy import select
 from app.api.v1.auth import hash_password
 from app.models.user import User
 from app.models.lead import Lead
+from app.models.group import Group
 from app.models.lesson import Lesson
 from app.models.trial_booking import TrialBooking
 from app.models.client import Client
@@ -21,11 +22,12 @@ async def test_contract_intake_creates_client_and_contract(client, db_session):
     await db_session.commit()
 
     lead = Lead(name="Анна", phone="+79001111111", source="site", status="enrolled")
-    db_session.add(lead)
+    group = Group(name="Группа 1", teacher_id=teacher.id, capacity=12)
+    db_session.add_all([lead, group])
     await db_session.flush()
 
     lesson = Lesson(
-        group_name="Группа 1",
+        group_id=group.id,
         teacher_id=teacher.id,
         datetime=datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc),
         capacity=12,

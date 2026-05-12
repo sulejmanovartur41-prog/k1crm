@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.auth import get_current_user, require_role
 from app.database import get_db
+from app.models.group import Group
 from app.models.lesson import Lesson
 from app.models.trial_booking import TrialBooking
 from app.models.user import User
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/schedule", tags=["schedule"])
 
 
 class LessonCreate(BaseModel):
-    group_name: str
+    group_id: int
     teacher_id: int
     datetime: datetime
     room: Optional[str] = None
@@ -31,7 +32,8 @@ class LessonCreate(BaseModel):
 
 class LessonOut(BaseModel):
     id: int
-    group_name: str
+    group_id: int
+    group_name: Optional[str] = None
     teacher_id: int
     datetime: datetime
     room: Optional[str]
@@ -62,13 +64,28 @@ async def list_lessons(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    q = select(Lesson).order_by(Lesson.datetime)
+    q = (
+        select(Lesson, Group.name.label("group_name"))
+        .join(Group, Group.id == Lesson.group_id)
+        .order_by(Lesson.datetime)
+    )
     # Учитель видит только свои занятия — иначе через мобильное приложение
     # один преподаватель увидит и сможет открыть перекличку чужой группы.
     if current_user.role == "teacher":
         q = q.where(Lesson.teacher_id == current_user.id)
     result = await db.execute(q)
-    return result.scalars().all()
+    return [
+        LessonOut(
+            id=l.id,
+            group_id=l.group_id,
+            group_name=group_name,
+            teacher_id=l.teacher_id,
+            datetime=l.datetime,
+            room=l.room,
+            capacity=l.capacity,
+        )
+        for l, group_name in result.all()
+    ]
 
 
 @router.post("/lessons", response_model=LessonOut, status_code=201, summary="Создать занятие")
@@ -85,11 +102,24 @@ async def create_lesson(
     if teacher.role != "teacher":
         raise HTTPException(422, "Указанный пользователь не имеет роли преподавателя")
 
+    group_res = await db.execute(select(Group).where(Group.id == data.group_id))
+    group = group_res.scalar_one_or_none()
+    if not group:
+        raise HTTPException(422, "Группа не найдена")
+
     lesson = Lesson(**data.model_dump())
     db.add(lesson)
     await db.commit()
     await db.refresh(lesson)
-    return lesson
+    return LessonOut(
+        id=lesson.id,
+        group_id=lesson.group_id,
+        group_name=group.name,
+        teacher_id=lesson.teacher_id,
+        datetime=lesson.datetime,
+        room=lesson.room,
+        capacity=lesson.capacity,
+    )
 
 
 @router.get("/lessons/{lesson_id}/slots", summary="Свободные слоты")

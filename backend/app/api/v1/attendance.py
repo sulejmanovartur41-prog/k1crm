@@ -55,8 +55,8 @@ async def get_lesson_students(
         raise HTTPException(403, "Доступ только к своим занятиям")
 
     # Список учеников ограничен группой урока — учитель не должен видеть
-    # детей из других групп. Если клиент ещё не прикреплён к группе
-    # (group_name IS NULL) — он не попадёт в список переклички.
+    # детей из других групп. Клиент без group_id (новый, ожидает назначения)
+    # в список переклички не попадает.
     att_result = await db.execute(
         select(Attendance).where(Attendance.lesson_id == lesson_id)
     )
@@ -65,7 +65,7 @@ async def get_lesson_students(
     clients_result = await db.execute(
         select(Client).where(
             Client.status == "active",
-            Client.group_name == lesson.group_name,
+            Client.group_id == lesson.group_id,
         )
     )
     clients = clients_result.scalars().all()
@@ -104,7 +104,7 @@ async def mark_attendance(
         valid_res = await db.execute(
             select(Client.id).where(
                 Client.id.in_(requested_ids),
-                Client.group_name == lesson.group_name,
+                Client.group_id == lesson.group_id,
             )
         )
         valid_ids = {row[0] for row in valid_res.all()}

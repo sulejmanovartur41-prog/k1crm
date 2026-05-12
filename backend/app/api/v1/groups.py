@@ -1,0 +1,266 @@
+import logging
+from datetime import datetime, timezone
+from typing import List, Literal, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.v1.auth import get_current_user, require_role
+from app.database import get_db
+from app.models.client import Client
+from app.models.group import Group
+from app.models.lesson import Lesson
+from app.models.user import User
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/groups", tags=["groups"])
+
+GroupStatus = Literal["active", "archived"]
+
+
+class GroupCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    level: Optional[str] = Field(default=None, max_length=50)
+    teacher_id: Optional[int] = None
+    room: Optional[str] = Field(default=None, max_length=50)
+    capacity: int = Field(default=12, ge=1, le=100)
+    color: Optional[str] = Field(default=None, max_length=20)
+    description: Optional[str] = Field(default=None, max_length=500)
+
+
+class GroupUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    level: Optional[str] = Field(default=None, max_length=50)
+    teacher_id: Optional[int] = None
+    room: Optional[str] = Field(default=None, max_length=50)
+    capacity: Optional[int] = Field(default=None, ge=1, le=100)
+    color: Optional[str] = Field(default=None, max_length=20)
+    description: Optional[str] = Field(default=None, max_length=500)
+    status: Optional[GroupStatus] = None
+
+
+class GroupOut(BaseModel):
+    id: int
+    name: str
+    level: Optional[str]
+    teacher_id: Optional[int]
+    room: Optional[str]
+    capacity: int
+    color: Optional[str]
+    status: str
+    description: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class GroupListItem(GroupOut):
+    students_count: int
+    teacher_name: Optional[str]
+
+
+class GroupStudent(BaseModel):
+    id: int
+    child_name: str
+    parent_name: str
+    parent_phone: str
+    status: str
+
+
+class GroupLessonItem(BaseModel):
+    id: int
+    datetime: datetime
+    room: Optional[str]
+    capacity: int
+
+
+class GroupDetail(GroupOut):
+    teacher_name: Optional[str]
+    students: List[GroupStudent]
+    upcoming_lessons: List[GroupLessonItem]
+
+
+async def _validate_teacher(db: AsyncSession, teacher_id: Optional[int]) -> None:
+    if teacher_id is None:
+        return
+    res = await db.execute(select(User).where(User.id == teacher_id))
+    teacher = res.scalar_one_or_none()
+    if not teacher:
+        raise HTTPException(422, "Преподаватель не найден")
+    if teacher.role != "teacher":
+        raise HTTPException(422, "Указанный пользователь не имеет роли преподавателя")
+
+
+@router.get("", response_model=List[GroupListItem], summary="Список групп")
+async def list_groups(
+    status: Optional[GroupStatus] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # admin/manager — все группы, teacher — только свои (включая archived,
+    # чтобы видеть прошлогодний контекст). Фильтр status опциональный.
+    q = (
+        select(
+            Group,
+            func.count(Client.id).label("students_count"),
+            User.name.label("teacher_name"),
+        )
+        .outerjoin(Client, Client.group_id == Group.id)
+        .outerjoin(User, User.id == Group.teacher_id)
+        .group_by(Group.id, User.name)
+        .order_by(Group.name)
+    )
+    if current_user.role == "teacher":
+        q = q.where(Group.teacher_id == current_user.id)
+    if status is not None:
+        q = q.where(Group.status == status)
+
+    result = await db.execute(q)
+    items = []
+    for group, students_count, teacher_name in result.all():
+        item = GroupListItem.model_validate(group)
+        item = item.model_copy(update={
+            "students_count": students_count,
+            "teacher_name": teacher_name,
+        })
+        items.append(item)
+    return items
+
+
+@router.get("/{group_id}", response_model=GroupDetail, summary="Карточка группы")
+async def get_group(
+    group_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    res = await db.execute(select(Group).where(Group.id == group_id))
+    group = res.scalar_one_or_none()
+    if not group:
+        raise HTTPException(404, "Группа не найдена")
+    if current_user.role == "teacher" and group.teacher_id != current_user.id:
+        raise HTTPException(403, "Доступ только к своим группам")
+
+    teacher_name = None
+    if group.teacher_id is not None:
+        t_res = await db.execute(select(User.name).where(User.id == group.teacher_id))
+        teacher_name = t_res.scalar_one_or_none()
+
+    students_res = await db.execute(
+        select(Client)
+        .where(Client.group_id == group_id)
+        .order_by(Client.child_name)
+    )
+    students = [
+        GroupStudent(
+            id=c.id,
+            child_name=c.child_name,
+            parent_name=c.parent_name,
+            parent_phone=c.parent_phone,
+            status=c.status,
+        )
+        for c in students_res.scalars().all()
+    ]
+
+    now = datetime.now(timezone.utc)
+    lessons_res = await db.execute(
+        select(Lesson)
+        .where(Lesson.group_id == group_id, Lesson.datetime >= now)
+        .order_by(Lesson.datetime)
+        .limit(5)
+    )
+    upcoming = [
+        GroupLessonItem(id=l.id, datetime=l.datetime, room=l.room, capacity=l.capacity)
+        for l in lessons_res.scalars().all()
+    ]
+
+    return GroupDetail(
+        **GroupOut.model_validate(group).model_dump(),
+        teacher_name=teacher_name,
+        students=students,
+        upcoming_lessons=upcoming,
+    )
+
+
+@router.post("", response_model=GroupOut, status_code=201, summary="Создать группу")
+async def create_group(
+    data: GroupCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role("admin", "manager")),
+):
+    await _validate_teacher(db, data.teacher_id)
+    group = Group(**data.model_dump())
+    db.add(group)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Группа с таким названием уже существует")
+    await db.refresh(group)
+    logger.info("Group created: %s (id=%s)", group.name, group.id)
+    return group
+
+
+@router.patch("/{group_id}", response_model=GroupOut, summary="Изменить группу")
+async def update_group(
+    group_id: int,
+    data: GroupUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role("admin", "manager")),
+):
+    res = await db.execute(select(Group).where(Group.id == group_id))
+    group = res.scalar_one_or_none()
+    if not group:
+        raise HTTPException(404, "Группа не найдена")
+
+    payload = data.model_dump(exclude_unset=True)
+    if "teacher_id" in payload:
+        await _validate_teacher(db, payload["teacher_id"])
+    for field, value in payload.items():
+        setattr(group, field, value)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Группа с таким названием уже существует")
+    await db.refresh(group)
+    return group
+
+
+@router.post("/{group_id}/students/{client_id}", status_code=204, summary="Добавить ученика в группу")
+async def add_student(
+    group_id: int,
+    client_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role("admin", "manager")),
+):
+    g_res = await db.execute(select(Group).where(Group.id == group_id))
+    if not g_res.scalar_one_or_none():
+        raise HTTPException(404, "Группа не найдена")
+    c_res = await db.execute(select(Client).where(Client.id == client_id))
+    client = c_res.scalar_one_or_none()
+    if not client:
+        raise HTTPException(404, "Клиент не найден")
+    client.group_id = group_id
+    await db.commit()
+
+
+@router.delete("/{group_id}/students/{client_id}", status_code=204, summary="Убрать ученика из группы")
+async def remove_student(
+    group_id: int,
+    client_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role("admin", "manager")),
+):
+    c_res = await db.execute(select(Client).where(Client.id == client_id))
+    client = c_res.scalar_one_or_none()
+    if not client:
+        raise HTTPException(404, "Клиент не найден")
+    if client.group_id != group_id:
+        raise HTTPException(409, "Клиент не состоит в этой группе")
+    client.group_id = None
+    await db.commit()
