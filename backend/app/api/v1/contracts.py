@@ -142,6 +142,35 @@ async def get_contract(
     return c
 
 
+@router.post("/{contract_id}/generate-pdf", summary="Сформировать (или пересформировать) PDF")
+async def generate_pdf(
+    contract_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role("admin", "manager")),
+):
+    result = await db.execute(
+        select(Contract, Client)
+        .join(Client, Client.id == Contract.client_id)
+        .where(Contract.id == contract_id)
+    )
+    row = result.one_or_none()
+    if not row:
+        raise HTTPException(404, "Договор или клиент не найден")
+    contract, client = row
+
+    try:
+        pdf_path = await generate_contract_pdf(client, contract)
+        contract.pdf_path = pdf_path
+        await db.commit()
+    except Exception as e:
+        logger.error("PDF generation failed for contract %s: %s", contract_id, e)
+        raise HTTPException(500, f"Не удалось сформировать PDF: {e}")
+
+    if not os.path.exists(pdf_path):
+        raise HTTPException(500, "Файл не был создан на диске")
+    return FileResponse(pdf_path, media_type="application/pdf", filename=f"contract_{contract_id}.pdf")
+
+
 @router.get("/{contract_id}/download", summary="Скачать PDF договора")
 async def download_contract(
     contract_id: int,

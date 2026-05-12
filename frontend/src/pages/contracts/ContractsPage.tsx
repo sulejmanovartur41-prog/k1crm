@@ -1,8 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Table, Tag, Button, Typography, message, Space } from 'antd'
-import { CheckOutlined, DownloadOutlined } from '@ant-design/icons'
+import { CheckOutlined, DownloadOutlined, FilePdfOutlined } from '@ant-design/icons'
 import api from '../../api/client'
 import dayjs from 'dayjs'
+
+const { Title } = Typography
+
+const STATUS_LABELS: Record<string, string> = {
+  generated: 'Сгенерирован',
+  signed: 'Подписан',
+  paid: 'Оплачен',
+}
+const STATUS_COLORS: Record<string, string> = {
+  generated: 'blue',
+  signed: 'green',
+  paid: 'gold',
+}
 
 async function downloadContractPdf(contractId: number) {
   try {
@@ -16,21 +29,27 @@ async function downloadContractPdf(contractId: number) {
     a.click()
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 100)
   } catch {
-    message.error('PDF не найден или ещё не сформирован')
+    message.error('Не удалось скачать PDF')
   }
 }
 
-const { Title } = Typography
-
-const STATUS_LABELS: Record<string, string> = {
-  generated: 'Сгенерирован',
-  signed: 'Подписан',
-  paid: 'Оплачен',
-}
-const STATUS_COLORS: Record<string, string> = {
-  generated: 'blue',
-  signed: 'green',
-  paid: 'gold',
+async function generateAndDownloadPdf(contractId: number) {
+  try {
+    message.loading({ content: 'Формируем PDF...', key: 'pdf' })
+    const res = await api.post(`/contracts/${contractId}/generate-pdf`, null, { responseType: 'blob' })
+    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+    const a = document.createElement('a')
+    a.style.display = 'none'
+    a.href = url
+    a.download = `contract_${contractId}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 100)
+    message.success({ content: 'PDF готов', key: 'pdf' })
+  } catch (e: any) {
+    const detail = e?.response?.data ? 'Ошибка формирования PDF' : 'Нет соединения'
+    message.error({ content: detail, key: 'pdf' })
+  }
 }
 
 export default function ContractsPage() {
@@ -50,21 +69,49 @@ export default function ContractsPage() {
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
-    { title: 'Клиент ID', dataIndex: 'client_id' },
-    { title: 'Сумма', dataIndex: 'amount', render: (v: number) => `${Number(v).toLocaleString('ru')} ₽` },
-    { title: 'Статус', dataIndex: 'status', render: (s: string) => <Tag color={STATUS_COLORS[s]}>{STATUS_LABELS[s] || s}</Tag> },
-    { title: 'Создан', dataIndex: 'created_at', render: (d: string) => dayjs(d).format('DD.MM.YY') },
+    { title: 'Клиент ID', dataIndex: 'client_id', width: 100 },
+    {
+      title: 'Сумма',
+      dataIndex: 'amount',
+      render: (v: number) => `${Number(v).toLocaleString('ru')} ₽`,
+    },
+    {
+      title: 'Статус',
+      dataIndex: 'status',
+      render: (s: string) => <Tag color={STATUS_COLORS[s]}>{STATUS_LABELS[s] || s}</Tag>,
+    },
+    {
+      title: 'Создан',
+      dataIndex: 'created_at',
+      render: (d: string) => dayjs(d).format('DD.MM.YY'),
+    },
     {
       title: 'Действия',
       render: (_: unknown, row: any) => (
         <Space>
-          {row.pdf_path && (
-            <Button size="small" icon={<DownloadOutlined />} onClick={() => downloadContractPdf(row.id)}>
-              PDF
+          {row.pdf_path ? (
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              onClick={() => downloadContractPdf(row.id)}
+            >
+              Скачать PDF
+            </Button>
+          ) : (
+            <Button
+              size="small"
+              icon={<FilePdfOutlined />}
+              onClick={() => generateAndDownloadPdf(row.id)}
+            >
+              Сформировать PDF
             </Button>
           )}
           {row.status === 'generated' && (
-            <Button size="small" icon={<CheckOutlined />} onClick={() => signMutation.mutate(row.id)}>
+            <Button
+              size="small"
+              icon={<CheckOutlined />}
+              onClick={() => signMutation.mutate(row.id)}
+            >
               Подписан
             </Button>
           )}
@@ -76,7 +123,13 @@ export default function ContractsPage() {
   return (
     <div>
       <Title level={3}>Договора</Title>
-      <Table rowKey="id" columns={columns} dataSource={contracts} loading={isLoading} size="middle" />
+      <Table
+        rowKey="id"
+        columns={columns}
+        dataSource={contracts}
+        loading={isLoading}
+        size="middle"
+      />
     </div>
   )
 }

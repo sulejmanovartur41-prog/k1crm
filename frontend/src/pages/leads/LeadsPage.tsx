@@ -6,6 +6,7 @@ import {
 } from 'antd'
 import { PlusOutlined, PhoneOutlined, EyeOutlined } from '@ant-design/icons'
 import { getLeads, getLeadsStats, createLead, Lead } from '../../api/leads'
+import { getRole } from '../../auth'
 import dayjs from 'dayjs'
 
 const { Title } = Typography
@@ -28,9 +29,12 @@ const STATUS_LABELS: Record<string, string> = {
   archived: 'Архив',
 }
 
+const ROLE_BASE: Record<string, string> = { admin: '/admin', manager: '/manager', teacher: '/teacher' }
+
 export default function LeadsPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const base = ROLE_BASE[getRole()] ?? '/admin'
   const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [addOpen, setAddOpen] = useState(false)
   const [form] = Form.useForm()
@@ -77,7 +81,7 @@ export default function LeadsPage() {
       title: '',
       render: (_: unknown, row: Lead) => (
         <Space>
-          <Button icon={<EyeOutlined />} size="small" onClick={() => navigate(`/leads/${row.id}`)}>
+          <Button icon={<EyeOutlined />} size="small" onClick={() => navigate(`${base}/leads/${row.id}`)}>
             Открыть
           </Button>
           <Button icon={<PhoneOutlined />} size="small" href={`tel:${row.phone}`}>
