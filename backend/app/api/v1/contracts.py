@@ -15,6 +15,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.client import Client
 from app.models.contract import Contract
+from app.models.lesson import Lesson
 from app.models.payment import Payment
 from app.models.trial_booking import TrialBooking
 from app.models.user import User
@@ -78,6 +79,9 @@ async def intake(
         if datetime.now(timezone.utc) - created > INTAKE_TOKEN_TTL:
             raise HTTPException(410, "Срок действия ссылки истёк")
 
+    lesson_res = await db.execute(select(Lesson).where(Lesson.id == booking.lesson_id))
+    trial_lesson = lesson_res.scalar_one_or_none()
+
     client = Client(
         lead_id=booking.lead_id,
         child_name=data.child_name,
@@ -85,6 +89,7 @@ async def intake(
         parent_name=data.parent_name,
         parent_phone=data.parent_phone,
         passport_data=data.passport_data,
+        group_id=trial_lesson.group_id if trial_lesson else None,
     )
     db.add(client)
     await db.flush()

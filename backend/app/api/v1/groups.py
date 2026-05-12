@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -247,6 +247,66 @@ async def add_student(
         raise HTTPException(404, "Клиент не найден")
     client.group_id = group_id
     await db.commit()
+
+
+class ScheduleGenRequest(BaseModel):
+    weekdays: List[int] = Field(..., description="ISO weekdays: 1=Пн … 7=Вс", min_length=1)
+    time: str = Field(..., pattern=r"^\d{2}:\d{2}$", description="Время урока HH:MM")
+    weeks: int = Field(default=8, ge=1, le=52)
+    start_date: Optional[date] = None
+
+
+@router.post("/{group_id}/schedule", summary="Сгенерировать расписание")
+async def generate_schedule(
+    group_id: int,
+    data: ScheduleGenRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role("admin", "manager")),
+):
+    res = await db.execute(select(Group).where(Group.id == group_id))
+    group = res.scalar_one_or_none()
+    if not group:
+        raise HTTPException(404, "Группа не найдена")
+    if group.teacher_id is None:
+        raise HTTPException(422, "Назначьте преподавателя перед генерацией расписания")
+
+    hour, minute = map(int, data.time.split(":"))
+    start = data.start_date or date.today()
+
+    existing_res = await db.execute(
+        select(Lesson.datetime).where(Lesson.group_id == group_id)
+    )
+    existing_dates = {row[0].date() for row in existing_res.all() if row[0]}
+
+    def first_occurrence(iso_wd: int) -> date:
+        delta = (iso_wd - 1) - start.weekday()
+        if delta < 0:
+            delta += 7
+        return start + timedelta(days=delta)
+
+    created = 0
+    skipped: list[str] = []
+
+    for wd in data.weekdays:
+        current = first_occurrence(wd)
+        for week in range(data.weeks):
+            target = current + timedelta(weeks=week)
+            if target in existing_dates:
+                skipped.append(str(target))
+                continue
+            db.add(Lesson(
+                group_id=group_id,
+                teacher_id=group.teacher_id,
+                datetime=datetime(target.year, target.month, target.day, hour, minute, tzinfo=timezone.utc),
+                room=group.room,
+                capacity=group.capacity,
+            ))
+            existing_dates.add(target)  # prevent duplicate within same request
+            created += 1
+
+    await db.commit()
+    logger.info("Schedule generated for group %s: created=%s skipped=%s", group_id, created, len(skipped))
+    return {"created": created, "skipped": skipped}
 
 
 @router.delete("/{group_id}/students/{client_id}", status_code=204, summary="Убрать ученика из группы")
