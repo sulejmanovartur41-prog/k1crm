@@ -113,7 +113,7 @@ async def dashboard(
         )
     )
     rev_prev_val = float(rev_prev.scalar() or 0)
-    delta_pct = round((rev_current_val - rev_prev_val) / rev_prev_val * 100, 1) if rev_prev_val else 0
+    delta_pct = round((rev_current_val - rev_prev_val) / rev_prev_val * 100, 1) if rev_prev_val else 0.0
 
     active_clients = await db.execute(
         select(func.count(Client.id)).where(Client.status == "active")

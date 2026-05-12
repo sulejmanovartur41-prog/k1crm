@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Table, Tag, Button, Typography, message, Space } from 'antd'
 import { CheckOutlined, DownloadOutlined, FilePdfOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { downloadContractPdf, generateAndDownloadPdf } from '../../api/contracts'
+import { getContracts, signContract, downloadContractPdf, generateAndDownloadPdf } from '../../api/contracts'
 
 const { Title } = Typography
 
@@ -21,15 +21,16 @@ export default function ContractsPage() {
   const qc = useQueryClient()
   const { data: contracts = [], isLoading } = useQuery({
     queryKey: ['contracts'],
-    queryFn: () => api.get('/contracts').then((r) => r.data),
+    queryFn: getContracts,
   })
 
   const signMutation = useMutation({
-    mutationFn: (id: number) => api.post(`/contracts/${id}/sign`),
+    mutationFn: signContract,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contracts'] })
       message.success('Договор отмечен как подписанный')
     },
+    onError: (e: any) => message.error(e?.response?.data?.detail ?? 'Ошибка'),
   })
 
   const columns = [

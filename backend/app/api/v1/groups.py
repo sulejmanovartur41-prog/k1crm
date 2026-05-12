@@ -164,33 +164,41 @@ async def get_group(
 
     # Attendance stats for the last 30 days: lessons in [cutoff, now]
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-    att_res = await db.execute(
-        select(
-            Attendance.client_id,
-            func.count().label("total"),
-            func.sum(cast(Attendance.present, Integer)).label("present_count"),
-        )
-        .join(Lesson, Lesson.id == Attendance.lesson_id)
-        .where(
-            Attendance.client_id.in_([c.id for c in raw_students]),
-            Lesson.group_id == group_id,
-            Lesson.datetime >= cutoff,
-        )
-        .group_by(Attendance.client_id)
-    )
-    # Fraction 0-1 (same representation as dashboard attendance_by_group.rate)
+    student_ids = [c.id for c in raw_students]
+
     att_map: dict[int, float] = {}
-    for client_id, total, present_count in att_res.all():
-        att_map[client_id] = round((present_count or 0) / total, 2) if total else 0.0
+    if student_ids:
+        att_res = await db.execute(
+            select(
+                Attendance.client_id,
+                func.count().label("total"),
+                func.sum(cast(Attendance.present, Integer)).label("present_count"),
+            )
+            .join(Lesson, Lesson.id == Attendance.lesson_id)
+            .where(
+                Attendance.client_id.in_(student_ids),
+                Lesson.group_id == group_id,
+                Lesson.datetime >= cutoff,
+            )
+            .group_by(Attendance.client_id)
+        )
+        # Fraction 0-1 (same representation as dashboard attendance_by_group.rate).
+        # 4 decimal places so the frontend can round to whole percent without precision loss.
+        for client_id, total, present_count in att_res.all():
+            att_map[client_id] = round((present_count or 0) / total, 4) if total else 0.0
 
     # Last payment status per student
-    pay_res = await db.execute(
-        select(Payment.client_id, Payment.status)
-        .where(Payment.client_id.in_([c.id for c in raw_students]))
-        .order_by(Payment.client_id, Payment.created_at.desc())
-    )
     pay_map: dict[int, str] = {}
-    for client_id, pay_status in pay_res.all():
+    if not student_ids:
+        pay_res_rows = []
+    else:
+        pay_res = await db.execute(
+            select(Payment.client_id, Payment.status)
+            .where(Payment.client_id.in_(student_ids))
+            .order_by(Payment.client_id, Payment.created_at.desc())
+        )
+        pay_res_rows = pay_res.all()
+    for client_id, pay_status in pay_res_rows:
         if client_id not in pay_map:
             pay_map[client_id] = pay_status
 
