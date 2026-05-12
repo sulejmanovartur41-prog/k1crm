@@ -1,5 +1,6 @@
 import logging
 
+from app.tasks._async_runner import run_async_task
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -7,45 +8,43 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(name="app.tasks.calls.retry_call_task")
 def retry_call_task(call_task_id: int):
-    """Notify manager about a scheduled retry call."""
-    import asyncio
+    """Уведомить менеджера о запланированной повторной попытке звонка."""
     from sqlalchemy import select
-    from app.database import async_session_maker
     from app.models.call_task import CallTask
     from app.models.lead import Lead
+    from app.services.notifications import notify_manager
 
-    async def _run():
-        async with async_session_maker() as db:
+    async def _run(session_maker):
+        async with session_maker() as db:
             result = await db.execute(select(CallTask).where(CallTask.id == call_task_id))
             task = result.scalar_one_or_none()
             if not task:
                 return
             lead_result = await db.execute(select(Lead).where(Lead.id == task.lead_id))
             lead = lead_result.scalar_one_or_none()
-            if lead:
-                from app.services.notifications import notify_manager
-                await notify_manager(
-                    db,
-                    f"📞 Повторный звонок: {lead.name} ({lead.phone})",
-                    recipient_id=task.manager_id or 0,
-                )
-                await db.commit()
+            if not lead:
+                return
+            await notify_manager(
+                db,
+                f"📞 Повторный звонок: {lead.name} ({lead.phone})",
+                recipient_id=task.manager_id,
+            )
+            await db.commit()
 
-    asyncio.run(_run())
+    run_async_task(_run)
 
 
 @celery_app.task(name="app.tasks.calls.send_trial_reminder")
 def send_trial_reminder(booking_id: int, hours_before: int):
-    """Send trial lesson reminder to the lead."""
-    import asyncio
+    """Напоминание о пробном уроке."""
     from sqlalchemy import select
-    from app.database import async_session_maker
-    from app.models.trial_booking import TrialBooking
     from app.models.lead import Lead
     from app.models.lesson import Lesson
+    from app.models.trial_booking import TrialBooking
+    from app.services.notifications import notify_lead
 
-    async def _run():
-        async with async_session_maker() as db:
+    async def _run(session_maker):
+        async with session_maker() as db:
             result = await db.execute(select(TrialBooking).where(TrialBooking.id == booking_id))
             booking = result.scalar_one_or_none()
             if not booking or booking.status != "booked":
@@ -66,24 +65,20 @@ def send_trial_reminder(booking_id: int, hours_before: int):
                 booking.reminder_2h_sent = True
 
             if lead.telegram_chat_id:
-                from app.services.notifications import notify_lead
                 await notify_lead(db, lead.id, lead.telegram_chat_id, msg)
             await db.commit()
 
-    asyncio.run(_run())
+    run_async_task(_run)
 
 
 @celery_app.task(name="app.tasks.calls.follow_up_indoubt")
 def follow_up_indoubt(lead_id: int):
-    """48h after 'in_doubt' — create a follow-up call task."""
-    import asyncio
+    """Через 48ч после статуса 'in_doubt' — создать follow-up задачу звонка."""
     from datetime import datetime, timedelta, timezone
-    from sqlalchemy import select
-    from app.database import async_session_maker
     from app.models.call_task import CallTask
 
-    async def _run():
-        async with async_session_maker() as db:
+    async def _run(session_maker):
+        async with session_maker() as db:
             task = CallTask(
                 lead_id=lead_id,
                 next_call_at=datetime.now(timezone.utc) + timedelta(hours=48),
@@ -92,4 +87,4 @@ def follow_up_indoubt(lead_id: int):
             await db.commit()
             logger.info("Follow-up task created for lead %s", lead_id)
 
-    asyncio.run(_run())
+    run_async_task(_run)

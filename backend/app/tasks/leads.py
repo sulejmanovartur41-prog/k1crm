@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
+from app.tasks._async_runner import run_async_task
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -8,16 +9,14 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(name="app.tasks.leads.check_new_leads")
 def check_new_leads():
-    """Every 5 minutes: find new leads without a call task and notify manager."""
-    import asyncio
+    """Каждые 5 минут: создать call_task для новых лидов, у которых её ещё нет."""
     from sqlalchemy import select
-    from app.database import async_session_maker
-    from app.models.lead import Lead
     from app.models.call_task import CallTask
+    from app.models.lead import Lead
 
-    async def _run():
+    async def _run(session_maker):
         threshold = datetime.now(timezone.utc) - timedelta(minutes=10)
-        async with async_session_maker() as db:
+        async with session_maker() as db:
             result = await db.execute(
                 select(Lead).where(
                     Lead.status == "new",
@@ -38,4 +37,4 @@ def check_new_leads():
                     logger.info("Auto call_task created for lead %s", lead.id)
             await db.commit()
 
-    asyncio.run(_run())
+    run_async_task(_run)

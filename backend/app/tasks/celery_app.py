@@ -37,4 +37,6 @@ celery_app.conf.beat_schedule = {
     },
 }
 
-celery_app.conf.timezone = "Europe/Moscow"
+# UTC — единое время для beat-расписания и SQL-фильтров (всё в БД хранится в UTC).
+# Если нужно «9:00 по Москве», переводим вручную в crontab(hour=6) UTC.
+celery_app.conf.timezone = "UTC"
