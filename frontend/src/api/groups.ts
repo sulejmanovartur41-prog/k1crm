@@ -23,9 +23,12 @@ export interface GroupListItem extends Group {
 export interface GroupStudent {
   id: number
   child_name: string
+  child_birth_date: string | null
   parent_name: string
   parent_phone: string
   status: string
+  attendance_rate: number | null
+  payment_status: string | null
 }
 
 export interface GroupLessonItem {
@@ -70,3 +73,13 @@ export const addStudentToGroup = (groupId: number, clientId: number) =>
 
 export const removeStudentFromGroup = (groupId: number, clientId: number) =>
   api.delete<void>(`/groups/${groupId}/students/${clientId}`).then((r) => r.data)
+
+export interface ScheduleGenRequest {
+  weekdays: number[]
+  time: string
+  weeks: number
+  start_date?: string
+}
+
+export const generateSchedule = (groupId: number, data: ScheduleGenRequest) =>
+  api.post<{ created: number; skipped: string[] }>(`/groups/${groupId}/schedule`, data).then((r) => r.data)

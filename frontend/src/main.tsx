@@ -21,6 +21,7 @@ import DashboardPage from './pages/payments/DashboardPage'
 import ManagerHome from './pages/home/ManagerHome'
 import TeacherHome from './pages/home/TeacherHome'
 import GroupsPage from './pages/groups/GroupsPage'
+import GroupDetail from './pages/groups/GroupDetail'
 import { getRole, isAuthenticated } from './auth'
 
 dayjs.locale('ru')
@@ -67,6 +68,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="leads" element={<LeadsPage />} />
               <Route path="leads/:id" element={<LeadDetail />} />
               <Route path="groups" element={<GroupsPage />} />
+              <Route path="groups/:id" element={<GroupDetail />} />
               <Route path="schedule" element={<SchedulePage />} />
               <Route path="contracts" element={<ContractsPage />} />
               <Route path="attendance" element={<AttendancePage />} />
@@ -77,6 +79,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="leads" element={<LeadsPage />} />
               <Route path="leads/:id" element={<LeadDetail />} />
               <Route path="groups" element={<GroupsPage />} />
+              <Route path="groups/:id" element={<GroupDetail />} />
               <Route path="schedule" element={<SchedulePage />} />
               <Route path="contracts" element={<ContractsPage />} />
             </Route>
@@ -85,6 +88,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route index element={<TeacherHome />} />
               <Route path="schedule" element={<SchedulePage />} />
               <Route path="groups" element={<GroupsPage />} />
+              <Route path="groups/:id" element={<GroupDetail />} />
               <Route path="attendance" element={<AttendancePage />} />
             </Route>
 
