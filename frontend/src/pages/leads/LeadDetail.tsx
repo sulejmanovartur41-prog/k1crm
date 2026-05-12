@@ -6,8 +6,8 @@ import {
   Typography, Table, message, Divider, Row, Col, Statistic,
 } from 'antd'
 import { PhoneOutlined, ArrowLeftOutlined, CalendarOutlined } from '@ant-design/icons'
-import { getLead, updateLeadStatus } from '../../api/leads'
-import { getCallTasks, registerAttempt, initiateCall } from '../../api/calls'
+import { getLead } from '../../api/leads'
+import { getCallTasks, registerAttempt } from '../../api/calls'
 import { getLessons, createBooking } from '../../api/schedule'
 import dayjs from 'dayjs'
 
@@ -78,14 +78,13 @@ export default function LeadDetail() {
     },
   })
 
-  const handleCall = async () => {
+  // Клик «Позвонить» открывает форму результата звонка и подставляет tel:-ссылку.
+  // Реальная инициация через Zadarma делается отдельным сценарием с
+  // настроенным extension-ом — захардкоженное `from_number='office'` было
+  // невалидно и убрано.
+  const handleCall = () => {
     if (lead) {
-      try {
-        await initiateCall('office', lead.phone)
-        message.success(`Инициирован звонок на ${lead.phone}`)
-      } catch {
-        message.info(`Номер: ${lead.phone}`)
-      }
+      window.open(`tel:${lead.phone}`)
     }
     setCallModalOpen(true)
   }

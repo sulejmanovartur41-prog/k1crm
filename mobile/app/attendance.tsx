@@ -1,17 +1,7 @@
 import { useEffect, useState } from 'react'
 import { View, Text, FlatList, Switch, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native'
-import * as SecureStore from 'expo-secure-store'
-import axios from 'axios'
 import { useLocalSearchParams, router } from 'expo-router'
-
-const API_URL = 'http://10.0.2.2:8000/api/v1'
-
-const api = axios.create({ baseURL: API_URL })
-api.interceptors.request.use(async (c) => {
-  const token = await SecureStore.getItemAsync('token')
-  if (token) c.headers.Authorization = `Bearer ${token}`
-  return c
-})
+import { api } from '../api'
 
 export default function AttendanceScreen() {
   const { lessonId, group } = useLocalSearchParams<{ lessonId: string; group: string }>()

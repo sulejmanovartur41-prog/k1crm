@@ -1,10 +1,8 @@
 import { useState } from 'react'
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native'
 import * as SecureStore from 'expo-secure-store'
-import axios from 'axios'
 import { router } from 'expo-router'
-
-const API_URL = 'http://10.0.2.2:8000/api/v1'
+import { api } from '../api'
 
 export default function LoginScreen() {
   const [login, setLogin] = useState('')
@@ -17,7 +15,7 @@ export default function LoginScreen() {
       const form = new URLSearchParams()
       form.append('username', login)
       form.append('password', password)
-      const { data } = await axios.post(`${API_URL}/auth/login`, form.toString(), {
+      const { data } = await api.post('/auth/login', form.toString(), {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       })
       await SecureStore.setItemAsync('token', data.access_token)

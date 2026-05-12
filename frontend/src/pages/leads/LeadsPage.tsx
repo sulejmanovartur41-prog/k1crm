@@ -96,17 +96,20 @@ export default function LeadsPage() {
         <Row gutter={16} style={{ marginBottom: 24 }}>
           <Col>
             <Card size="small">
-              <Statistic title="Всего лидов" value={Object.values(stats.by_status as Record<string, number>).reduce((a, b) => a + b, 0)} />
+              <Statistic
+                title="Всего лидов"
+                value={Object.values((stats.by_status as Record<string, number>) ?? {}).reduce((a, b) => a + b, 0)}
+              />
             </Card>
           </Col>
           <Col>
             <Card size="small">
-              <Statistic title="Новых сегодня" value={stats.new_today} />
+              <Statistic title="Новых сегодня" value={stats.new_today ?? 0} />
             </Card>
           </Col>
           <Col>
             <Card size="small">
-              <Statistic title="В обработке" value={(stats.by_status as any)?.calling || 0} />
+              <Statistic title="В обработке" value={(stats.by_status as Record<string, number> | undefined)?.calling ?? 0} />
             </Card>
           </Col>
         </Row>
