@@ -56,12 +56,14 @@ async function downloadPdf(contractId: number) {
     const res = await api.get(`/contracts/${contractId}/download`, { responseType: 'blob' })
     const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
     const a = document.createElement('a')
+    a.style.display = 'none'
     a.href = url
     a.download = `contract_${contractId}.pdf`
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(url)
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 100)
   } catch {
-    message.error('Не удалось скачать PDF')
+    message.error('PDF не найден или ещё не сформирован')
   }
 }
 

@@ -4,6 +4,22 @@ import { CheckOutlined, DownloadOutlined } from '@ant-design/icons'
 import api from '../../api/client'
 import dayjs from 'dayjs'
 
+async function downloadContractPdf(contractId: number) {
+  try {
+    const res = await api.get(`/contracts/${contractId}/download`, { responseType: 'blob' })
+    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+    const a = document.createElement('a')
+    a.style.display = 'none'
+    a.href = url
+    a.download = `contract_${contractId}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 100)
+  } catch {
+    message.error('PDF не найден или ещё не сформирован')
+  }
+}
+
 const { Title } = Typography
 
 const STATUS_LABELS: Record<string, string> = {
@@ -42,9 +58,11 @@ export default function ContractsPage() {
       title: 'Действия',
       render: (_: unknown, row: any) => (
         <Space>
-          <Button size="small" icon={<DownloadOutlined />} href={`/api/v1/contracts/${row.id}/download`} target="_blank">
-            PDF
-          </Button>
+          {row.pdf_path && (
+            <Button size="small" icon={<DownloadOutlined />} onClick={() => downloadContractPdf(row.id)}>
+              PDF
+            </Button>
+          )}
           {row.status === 'generated' && (
             <Button size="small" icon={<CheckOutlined />} onClick={() => signMutation.mutate(row.id)}>
               Подписан
